@@ -1,153 +1,145 @@
+import json
 import requests
 from bs4 import BeautifulSoup
-import json
-import re
-from urllib.parse import urljoin, unquote
 
-class BaiduSearchClient:
-    def __init__(self):
-        self.session = requests.Session()
-        self.base_url = 'https://www.baidu.com/s'
-        self.headers = {
+def clean_text(text):
+    """清理文本内容"""
+    if not text:
+        return ""
+    return ' '.join(text.split())
+
+def search_baidu(keyword, page=1):
+    """执行百度搜索"""
+    try:
+        session = requests.Session()
+        headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
         }
-        self.session.headers.update(self.headers)
-
-    def _clean_text(self, text):
-        """清理文本内容"""
-        if not text:
-            return ""
-        # 移除多余的空白字符
-        text = re.sub(r'\s+', ' ', text.strip())
-        # 移除特殊字符
-        text = text.replace('\n', ' ').replace('\r', '')
-        return text
-
-    def _extract_search_results(self, html_content):
-        """解析搜索结果HTML，提取结构化数据"""
-        soup = BeautifulSoup(html_content, 'html.parser')  # 使用内置解析器
-        results = []
+        session.headers.update(headers)
         
-        # 查找所有搜索结果容器
-        containers = soup.find_all(['div', 'article'], class_=['result', 'result-op', 'c-container'])
+        # 访问首页获取cookie
+        session.get('https://www.baidu.com')
         
-        for container in containers:
-            try:
-                result = {}
-                
-                # 提取标题和链接
-                title_element = container.find(['h3', 'h2'])
-                if title_element:
-                    a_tag = title_element.find('a')
-                    if a_tag:
-                        result['title'] = self._clean_text(a_tag.get_text())
-                        result['link'] = a_tag.get('href', '')
-                    else:
-                        continue
-
-                # 提取描述
-                content_element = container.find(['div', 'span'], class_=['content-right', 'c-abstract'])
-                if content_element:
-                    result['description'] = self._clean_text(content_element.get_text())
-                else:
-                    # 备选描述提取
-                    abstract = container.find(['div', 'span'], class_=['abstract', 'content'])
-                    result['description'] = self._clean_text(abstract.get_text()) if abstract else ""
-
-                # 提取来源和时间
-                source_element = container.find(['span', 'a'], class_=['c-showurl', 'source'])
-                result['source'] = self._clean_text(source_element.get_text()) if source_element else ""
-
-                time_element = container.find('span', class_=['c-color-gray2', 'time'])
-                result['publish_time'] = self._clean_text(time_element.get_text()) if time_element else ""
-
-                results.append(result)
-
-            except Exception as e:
-                print(f"解析结果错误: {str(e)}")
-                continue
-
-        return results
-
-    def search(self, keyword, page=1):
-        """执行搜索并返回结构化结果"""
-        offset = (page - 1) * 10
+        # 执行搜索
         params = {
             'wd': keyword,
-            'pn': str(offset),
+            'pn': str((page - 1) * 10),
             'rn': '10',
             'ie': 'utf-8'
         }
         
-        try:
-            # 获取初始cookie
-            self.session.get('https://www.baidu.com')
-            
-            # 执行搜索
-            response = self.session.get(
-                self.base_url,
-                params=params,
-                allow_redirects=True
-            )
-            
-            if response.status_code == 200:
-                # 解析搜索结果
-                results = self._extract_search_results(response.text)
+        response = session.get('https://www.baidu.com/s', params=params)
+        response.raise_for_status()
+        
+        # 解析结果
+        soup = BeautifulSoup(response.text, 'html.parser')
+        results = []
+        
+        # 查找搜索结果
+        for container in soup.select('.result, .result-op, .c-container'):
+            try:
+                # 提取标题和链接
+                h3 = container.select_one('h3')
+                if not h3:
+                    continue
+                    
+                a_tag = h3.select_one('a')
+                if not a_tag:
+                    continue
                 
-                return {
-                    'status': 'success',
-                    'data': {
-                        'keyword': keyword,
-                        'page': page,
-                        'total_found': len(results),
-                        'results': results
-                    }
-                }
-            else:
-                return {
-                    'status': 'error',
-                    'message': f'搜索失败，状态码: {response.status_code}'
-                }
+                title = clean_text(a_tag.get_text())
+                link = a_tag.get('href', '')
                 
-        except Exception as e:
-            return {
-                'status': 'error',
-                'message': str(e)
+                # 提取描述
+                abstract = container.select_one('.content-right, .c-abstract')
+                description = clean_text(abstract.get_text()) if abstract else ""
+                
+                # 提取来源
+                source = container.select_one('.c-showurl, .source')
+                source_text = clean_text(source.get_text()) if source else ""
+                
+                # 提取时间
+                time_elem = container.select_one('.c-color-gray2')
+                publish_time = clean_text(time_elem.get_text()) if time_elem else ""
+                
+                results.append({
+                    'title': title,
+                    'link': link,
+                    'description': description,
+                    'source': source_text,
+                    'publish_time': publish_time
+                })
+                
+            except Exception as e:
+                continue
+        
+        return {
+            'status': 'success',
+            'data': {
+                'keyword': keyword,
+                'page': page,
+                'total_found': len(results),
+                'results': results
             }
+        }
+        
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': str(e)
+        }
 
 def handler(event, context):
     """Netlify function handler"""
-    # 解析查询参数
-    params = event.get('queryStringParameters', {})
-    keyword = params.get('q', '')
-    page = int(params.get('page', '1'))
-    
-    if not keyword:
+    try:
+        # 获取查询参数
+        params = event.get('queryStringParameters', {}) or {}
+        keyword = params.get('q', '')
+        page = int(params.get('page', '1'))
+        
+        if not keyword:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS'
+                },
+                'body': json.dumps({
+                    'status': 'error',
+                    'message': '请提供搜索关键词(q参数)'
+                }, ensure_ascii=False)
+            }
+        
+        # 执行搜索
+        result = search_baidu(keyword, page)
+        
+        # 返回结果
         return {
-            'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'statusCode': 200 if result['status'] == 'success' else 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS'
+            },
+            'body': json.dumps(result, ensure_ascii=False)
+        }
+        
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
             'body': json.dumps({
                 'status': 'error',
-                'message': '请提供搜索关键词(q参数)'
+                'message': f'服务器错误: {str(e)}'
             }, ensure_ascii=False)
         }
-    
-    # 执行搜索
-    client = BaiduSearchClient()
-    result = client.search(keyword, page)
-    
-    # 返回结果
-    return {
-        'statusCode': 200 if result['status'] == 'success' else 500,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS'
-        },
-        'body': json.dumps(result, ensure_ascii=False)
-    }

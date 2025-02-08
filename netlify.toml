@@ -1,20 +1,39 @@
 [build]
-  publish = "public"
-  functions = "netlify/functions"
   command = ""
+  functions = "netlify/functions"
+  publish = "public"
 
 [build.environment]
+  # 指定Python版本
   PYTHON_VERSION = "3.11"
+  # 添加pip额外配置
+  PIP_NO_CACHE_DIR = "false"
 
 [functions]
+  # 指定函数目录
+  directory = "netlify/functions"
+  # 添加函数配置
+  included_files = ["*.py"]
+  external_node_modules = []
   node_bundler = "esbuild"
 
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
+  force = true
+
+[build.processing]
+  skip_processing = false
 
 [dev]
   publish = "public"
-  functions = "netlify/functions"
   port = 8888
+  autoLaunch = false
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type"
