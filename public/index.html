@@ -94,7 +94,6 @@
         color: #70757a;
         font-size: 14px;
       }
-      /* 新增的JSON视图样式 */
       .json-view {
         background: #f8f9fa;
         padding: 16px;
@@ -184,8 +183,11 @@
 
         try {
           const response = await fetch(
-            `/api/search?q=${encodeURIComponent(keyword)}`
+            `/.netlify/functions/search?q=${encodeURIComponent(keyword)}`
           )
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
           const data = await response.json()
           lastResponse = data
 
@@ -259,6 +261,10 @@
             performSearch()
           }
         })
+
+      // 显示初始提示
+      document.getElementById('searchResults').innerHTML =
+        '<div class="search-info">请输入关键词开始搜索</div>'
     </script>
   </body>
 </html>
