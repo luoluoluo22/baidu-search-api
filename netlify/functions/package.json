@@ -1,10 +1,13 @@
 {
-  "name": "baidu-search-api",
+  "name": "baidu-search-function",
   "version": "1.0.0",
-  "description": "Baidu Search API for Netlify Functions",
-  "main": "search.py",
+  "description": "Baidu search Netlify function",
+  "main": "search.js",
   "scripts": {
-    "build": "pip install -r requirements.txt"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@netlify/functions": "^2.0.0"
+  },
+  "private": true
 }

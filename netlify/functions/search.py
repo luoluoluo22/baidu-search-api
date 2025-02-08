@@ -1,3 +1,4 @@
+import sys
 import json
 import requests
 from bs4 import BeautifulSoup
@@ -93,53 +94,17 @@ def search_baidu(keyword, page=1):
             'message': str(e)
         }
 
-def handler(event, context):
-    """Netlify function handler"""
-    try:
-        # 获取查询参数
-        params = event.get('queryStringParameters', {}) or {}
-        keyword = params.get('q', '')
-        page = int(params.get('page', '1'))
-        
-        if not keyword:
-            return {
-                'statusCode': 400,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type',
-                    'Access-Control-Allow-Methods': 'GET, OPTIONS'
-                },
-                'body': json.dumps({
-                    'status': 'error',
-                    'message': '请提供搜索关键词(q参数)'
-                }, ensure_ascii=False)
-            }
-        
-        # 执行搜索
+if __name__ == "__main__":
+    # 从命令行参数获取搜索关键词和页码
+    if len(sys.argv) < 2:
+        result = {
+            'status': 'error',
+            'message': '请提供搜索关键词'
+        }
+    else:
+        keyword = sys.argv[1]
+        page = int(sys.argv[2]) if len(sys.argv) > 2 else 1
         result = search_baidu(keyword, page)
-        
-        # 返回结果
-        return {
-            'statusCode': 200 if result['status'] == 'success' else 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type',
-                'Access-Control-Allow-Methods': 'GET, OPTIONS'
-            },
-            'body': json.dumps(result, ensure_ascii=False)
-        }
-        
-    except Exception as e:
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'status': 'error',
-                'message': f'服务器错误: {str(e)}'
-            }, ensure_ascii=False)
-        }
+    
+    # 输出JSON结果
+    print(json.dumps(result, ensure_ascii=False))
