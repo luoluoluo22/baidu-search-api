@@ -3,7 +3,7 @@ import json
 import requests
 import logging
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -14,42 +14,72 @@ SEARCH_ENGINES = ['baidu']
 def search_baidu(keyword, page=1):
     """执行百度搜索"""
     try:
-        params = {
-            'wd': keyword,
-            'pn': str((page - 1) * 10),
-            'rn': '10',
-            'ie': 'utf-8',
-            'format': 'json',
-            'rsv_sug4': 1,
-            'from': 'api'
-        }
-        
-        # 使用百度搜索建议API获取相关结果
-        logger.info(f"正在搜索关键词: {keyword}")
-        url = f'https://suggestion.baidu.com/su?wd={quote(keyword)}&action=opensearch'
-        response = requests.get(url, timeout=10)
+        # 首先获取搜索建议
+        logger.info(f"正在获取搜索建议: {keyword}")
+        suggest_url = f'https://suggestion.baidu.com/su?wd={quote(keyword)}&action=opensearch'
+        response = requests.get(suggest_url, timeout=10)
         response.raise_for_status()
         
         suggestions = response.json()
-        results = []
+        suggest_results = []
         
         # 处理搜索建议结果
         if len(suggestions) > 1 and isinstance(suggestions[1], list):
-            for suggestion in suggestions[1][:10]:  # 取前10个结果
-                results.append({
+            for suggestion in suggestions[1]:
+                suggest_results.append({
                     'title': suggestion,
                     'link': f'https://www.baidu.com/s?wd={quote(suggestion)}',
                     'description': f'搜索建议: {suggestion}',
-                    'source': 'baidu'
+                    'type': 'suggestion'
                 })
+        
+        # 然后获取相关搜索
+        logger.info(f"正在获取相关搜索: {keyword}")
+        related_url = 'https://www.baidu.com/sugrec'
+        params = {
+            'prod': 'pc',
+            'wd': keyword,
+            'cb': 'null'
+        }
+        
+        response = requests.get(related_url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        # 移除 "null(" 和最后的 ")"
+        related_data = response.text.strip('null()')
+        related_json = json.loads(related_data)
+        
+        # 处理相关搜索结果
+        if 'g' in related_json:
+            for item in related_json['g']:
+                if 'q' in item:
+                    suggest_results.append({
+                        'title': item['q'],
+                        'link': f'https://www.baidu.com/s?wd={quote(item["q"])}',
+                        'description': f'相关搜索: {item["q"]}',
+                        'type': 'related'
+                    })
+        
+        # 对结果进行排序和去重
+        seen = set()
+        unique_results = []
+        for item in suggest_results:
+            if item['title'] not in seen:
+                seen.add(item['title'])
+                unique_results.append(item)
+        
+        # 分页处理
+        start_idx = (page - 1) * 10
+        end_idx = start_idx + 10
+        paged_results = unique_results[start_idx:end_idx]
         
         return {
             'status': 'success',
             'data': {
                 'keyword': keyword,
                 'page': page,
-                'total_found': len(results),
-                'results': results
+                'total_found': len(unique_results),
+                'results': paged_results
             }
         }
         
