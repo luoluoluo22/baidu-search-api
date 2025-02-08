@@ -94,17 +94,54 @@ def search_baidu(keyword, page=1):
             'message': str(e)
         }
 
-if __name__ == "__main__":
-    # 从命令行参数获取搜索关键词和页码
-    if len(sys.argv) < 2:
+def handler(event, context):
+    """Netlify function handler"""
+    # 获取查询参数
+    try:
+        params = event.get('queryStringParameters', {})
+        keyword = params.get('q')
+        page = int(params.get('page', '1'))
+
+        if not keyword:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'status': 'error',
+                    'message': '请提供搜索关键词 (使用q参数)'
+           }
+  }, ensure_ascii=False)e:
+            }
+
+        result = search_baidu(keyword, page)
+        
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps(result, ensure_ascii=False)
+        }
+        
+    except Exception as e:
         result = {
             'status': 'error',
-            'message': '请提供搜索关键词'
+            'message': str(e)
+   
+  
+ }
+        return {
+            'statusCode': 500,
+            'body': json.dumps(result, ensure_ascii=False)
         }
-    else:
-        keyword = sys.argv[1]
-        page = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-        result = search_baidu(keyword, page)
-    
-    # 输出JSON结果
-    print(json.dumps(result, ensure_ascii=False))
+
+if __name__ == "__main__":
+    # 用于本地测试
+    test_event = {
+        'queryStringParameters': {
+            'q': 'python',
+            'page': '1'
+        }
+    }
+    response = handler(test_event, None)
+    print(response['body'])
