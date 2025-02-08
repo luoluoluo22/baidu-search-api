@@ -1,9 +1,9 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
+  environment = { PYTHON_VERSION = "3.13" }
 
 [build.environment]
-  PYTHON_VERSION = "3.9"
   NODE_VERSION = "18"
 
 [functions]
