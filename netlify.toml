@@ -1,13 +1,20 @@
 [build]
-  command = ""
-  functions = "netlify/functions"
   publish = "public"
+  functions = "netlify/functions"
+  command = ""
+
+[build.environment]
+  PYTHON_VERSION = "3.11"
 
 [functions]
-  external_node_modules = ["requests"]
   node_bundler = "esbuild"
 
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
+
+[dev]
+  publish = "public"
+  functions = "netlify/functions"
+  port = 8888
