@@ -1,9 +1,8 @@
 import sys
 import json
 import requests
-from bs4 import BeautifulSoup
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import urllib.parse
 
 # 设置日志
@@ -11,21 +10,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu']
-ABSTRACT_MAX_LENGTH = 300
 REQUEST_TIMEOUT = 5
 
 # 请求头信息
 HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Referer": "https://m.baidu.com/"
 }
-
-def clean_text(text: str) -> str:
-    """清理文本内容"""
-    if not text:
-        return ""
-    return ' '.join(text.strip().split())
 
 def search_baidu(keyword: str, page: int = 1) -> Dict:
     """执行百度搜索"""
@@ -35,80 +28,88 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
         
         # 构建搜索URL
         params = {
-            'wd': encoded_keyword,
+            'word': encoded_keyword,
             'pn': str((page - 1) * 10),
-            'rn': '10',  # 每页结果数
-            'ie': 'utf-8'
+            'rn': '10',
+            'ie': 'utf-8',
+            'tn': 'baiduhome_pg',
+            'ct': '201326592',
+            'lm': '-1',
+            'si': 'm.baidu.com',
+            'rsv_pq': '1',
+            'sa': 'i_1'
         }
         
         with requests.Session() as session:
             session.headers.update(HEADERS)
             
-            # 执行搜索
-            response = session.get('https://www.baidu.com/s', params=params, timeout=REQUEST_TIMEOUT)
-            response.raise_for_status()
-            response.encoding = 'utf-8'
+            # 获取搜索建议
+            suggest_url = f'https://m.baidu.com/su'
+            suggest_params = {
+                'wd': keyword,
+                'action': 'opensearch',
+                'ie': 'utf-8'
+            }
             
-            # 解析结果
-            soup = BeautifulSoup(response.text, 'html.parser')
+            suggest_response = session.get(
+                suggest_url, 
+                params=suggest_params, 
+                timeout=REQUEST_TIMEOUT
+            )
+            suggest_response.raise_for_status()
+            suggestions = suggest_response.json()
+            
+            # 转换建议为结果格式
             results = []
             
-            # 查找搜索结果
-            containers = soup.select('#content_left .result, #content_left .result-op')
-            
-            for idx, container in enumerate(containers, start=(page-1)*10+1):
-                try:
-                    # 提取标题和链接
-                    title_elem = container.select_one('h3')
-                    if not title_elem:
-                        continue
-                        
-                    link_elem = title_elem.select_one('a')
-                    if not link_elem:
-                        continue
-                    
-                    title = clean_text(link_elem.get_text())
-                    link = link_elem.get('href', '')
-                    
-                    if not title or not link:
-                        continue
-                    
-                    # 处理链接
-                    if not link.startswith(('http://', 'https://')):
-                        link = 'https://www.baidu.com' + link
-                    
-                    # 提取摘要
-                    abstract = ''
-                    abstract_elem = container.select_one('.c-abstract, .content-right')
-                    if abstract_elem:
-                        abstract = clean_text(abstract_elem.get_text())
-                    
-                    # 如果没找到摘要，尝试使用其他元素
-                    if not abstract:
-                        content_elems = container.select('div > *:not(h3)')
-                        for elem in content_elems:
-                            if elem.get_text().strip():
-                                abstract = clean_text(elem.get_text())
-                                break
-                    
-                    # 处理摘要长度
-                    if abstract and len(abstract) > ABSTRACT_MAX_LENGTH:
-                        abstract = abstract[:ABSTRACT_MAX_LENGTH] + '...'
-                    
+            # 处理搜索建议
+            if len(suggestions) > 1 and isinstance(suggestions[1], list):
+                for idx, sugg in enumerate(suggestions[1], start=1):
                     results.append({
-                        'title': title,
-                        'link': link,
-                        'description': abstract,
+                        'title': sugg,
+                        'link': f'https://m.baidu.com/s?word={urllib.parse.quote(sugg)}',
+                        'description': f'搜索建议: {sugg}',
                         'rank': idx,
-                        'source': 'baidu'
+                        'source': 'baidu',
+                        'type': 'suggestion'
                     })
-                    
-                except Exception as e:
-                    logger.error(f"解析结果时出错: {str(e)}")
-                    continue
             
-            # 检查是否有下一页
-            next_page = bool(soup.select_one('a.n:contains("下一页")'))
+            # 获取相关搜索
+            related_url = 'https://m.baidu.com/rec'
+            related_params = {
+                'platform': 'wise',
+                'word': keyword,
+                'qid': '',
+                'rtt': '1'
+            }
+            
+            related_response = session.get(
+                related_url, 
+                params=related_params, 
+                timeout=REQUEST_TIMEOUT
+            )
+            related_response.raise_for_status()
+            
+            try:
+                related_data = related_response.json()
+                if isinstance(related_data, dict) and 'data' in related_data:
+                    for item in related_data['data']:
+                        if isinstance(item, dict) and 'query' in item:
+                            results.append({
+                                'title': item['query'],
+                                'link': f'https://m.baidu.com/s?word={urllib.parse.quote(item["query"])}',
+                                'description': f'相关搜索: {item["query"]}',
+                                'rank': len(results) + 1,
+                                'source': 'baidu',
+                                'type': 'related'
+                            })
+            except:
+                pass
+            
+            # 分页处理
+            start_idx = (page - 1) * 10
+            end_idx = start_idx + 10
+            paged_results = results[start_idx:end_idx]
             
             return {
                 'status': 'success',
@@ -116,8 +117,8 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
                     'keyword': keyword,
                     'page': page,
                     'total_found': len(results),
-                    'results': results,
-                    'has_next': next_page
+                    'results': paged_results,
+                    'has_next': len(results) > end_idx
                 }
             }
             
