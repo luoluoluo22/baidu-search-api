@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "description": "Baidu search Netlify function",
   "main": "search.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "dependencies": {
-    "@netlify/functions": "^2.0.0"
+    "node-fetch": "^2.6.1"
   },
-  "private": true
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
