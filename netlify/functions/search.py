@@ -3,31 +3,36 @@ import requests
 import logging
 from typing import Dict, List, Optional
 import urllib.parse
+import html
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu']
-REQUEST_TIMEOUT = 3  # 降低超时时间到3秒
+REQUEST_TIMEOUT = 3  # 超时时间设为3秒
 
 # 请求头信息
 HEADERS = {
     "Accept": "application/json",
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
 }
 
+def clean_text(text: str) -> str:
+    """清理文本内容"""
+    if not text:
+        return ""
+    # 解码HTML实体
+    text = html.unescape(text)
+    # 移除多余空白
+    return ' '.join(text.strip().split())
+
 def search_baidu(keyword: str, page: int = 1) -> Dict:
-    """执行百度搜索"""
+    """使用百度搜索建议API"""
     try:
-        # 编码关键词
-        encoded_keyword = urllib.parse.quote(keyword)
-        
-        # 使用搜索建议API
-        suggest_url = 'https://suggestion.baidu.com/su'
+        # 构建请求
         params = {
-            'wd': encoded_keyword,
+            'wd': keyword,
             'action': 'opensearch',
             'ie': 'utf-8',
             'from': 'mobile'
@@ -35,40 +40,45 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
         
         # 执行请求
         response = requests.get(
-            suggest_url,
+            'https://suggestion.baidu.com/su',
             params=params,
             headers=HEADERS,
             timeout=REQUEST_TIMEOUT
         )
         response.raise_for_status()
+        response.encoding = 'utf-8'
         
         # 解析结果
         suggestions = response.json()
         results = []
         
         if len(suggestions) > 1 and isinstance(suggestions[1], list):
-            for idx, sugg in enumerate(suggestions[1], start=1):
+            start_idx = (page - 1) * 10
+            end_idx = start_idx + 10
+            
+            # 只处理当前页的内容
+            for idx, sugg in enumerate(suggestions[1][start_idx:end_idx], start=start_idx+1):
+                # 清理文本
+                cleaned_sugg = clean_text(sugg)
+                if not cleaned_sugg:
+                    continue
+                    
                 results.append({
-                    'title': sugg,
-                    'link': f'https://m.baidu.com/s?word={urllib.parse.quote(sugg)}',
-                    'description': f'搜索建议: {sugg}',
+                    'title': cleaned_sugg,
+                    'link': f'https://m.baidu.com/s?word={urllib.parse.quote(cleaned_sugg)}',
+                    'description': f'相关搜索',
                     'rank': idx,
                     'source': 'baidu'
                 })
-        
-        # 分页处理
-        start_idx = (page - 1) * 10
-        end_idx = start_idx + 10
-        paged_results = results[start_idx:end_idx]
         
         return {
             'status': 'success',
             'data': {
                 'keyword': keyword,
                 'page': page,
-                'total_found': len(results),
-                'results': paged_results,
-                'has_next': len(results) > end_idx
+                'total_found': len(suggestions[1]) if len(suggestions) > 1 else 0,
+                'results': results,
+                'has_next': len(suggestions[1]) > end_idx if len(suggestions) > 1 else False
             }
         }
         
@@ -94,20 +104,16 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
 def handler(event, context):
     """Netlify function handler"""
     try:
+        # 获取请求参数
         params = event.get('queryStringParameters', {})
         keyword = params.get('q', '').strip()
         engine = params.get('engine', 'baidu').lower().strip()
         page = int(params.get('page', '1'))
-
-        logger.info(f"收到搜索请求 - 引擎: {engine}, 关键词: {keyword}, 页码: {page}")
-
+        
+        # 验证参数
         if not keyword:
             return {
                 'statusCode': 400,
-                'headers': {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
                 'body': json.dumps({
                     'status': 'error',
                     'message': '请提供搜索关键词 (使用q参数)'
@@ -117,24 +123,22 @@ def handler(event, context):
         if engine not in SEARCH_ENGINES:
             return {
                 'statusCode': 400,
-                'headers': {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
                 'body': json.dumps({
                     'status': 'error',
                     'message': f'不支持的搜索引擎。支持的引擎: {", ".join(SEARCH_ENGINES)}'
                 }, ensure_ascii=False)
             }
             
+        # 执行搜索
         result = search_baidu(keyword, page)
         
+        # 返回结果
         return {
             'statusCode': 200 if result['status'] == 'success' else 500,
             'headers': {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'public, max-age=60'  # 缓存1分钟
             },
             'body': json.dumps(result, ensure_ascii=False)
         }
@@ -143,10 +147,6 @@ def handler(event, context):
         logger.error(f"处理请求时出错: {str(e)}")
         return {
             'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin': '*'
-            },
             'body': json.dumps({
                 'status': 'error',
                 'message': str(e)
