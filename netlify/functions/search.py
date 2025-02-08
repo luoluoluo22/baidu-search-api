@@ -2,6 +2,12 @@ import sys
 import json
 import requests
 from bs4 import BeautifulSoup
+import logging
+import time
+
+# 设置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu', 'bing', 'google']
 
@@ -21,11 +27,18 @@ def search_baidu(keyword, page=1):
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
+            'Cache-Control': 'max-age=0',
+            'Upgrade-Insecure-Requests': '1'
         }
         session.headers.update(headers)
         
         # 访问首页获取cookie
-        session.get('https://www.baidu.com')
+        logger.info("正在访问百度首页获取Cookie...")
+        index_response = session.get('https://www.baidu.com', timeout=10)
+        index_response.raise_for_status()
+        
+        # 添加延迟
+        time.sleep(1)
         
         # 执行搜索
         params = {
@@ -35,15 +48,23 @@ def search_baidu(keyword, page=1):
             'ie': 'utf-8'
         }
         
-        response = session.get('https://www.baidu.com/s', params=params)
+        logger.info(f"正在搜索关键词: {keyword}")
+        response = session.get('https://www.baidu.com/s', params=params, timeout=10)
         response.raise_for_status()
+        
+        # 记录响应内容以便调试
+        logger.info(f"响应状态码: {response.status_code}")
+        logger.info(f"响应头: {dict(response.headers)}")
         
         # 解析结果
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
         
         # 查找搜索结果
-        for container in soup.select('.result, .result-op, .c-container'):
+        containers = soup.select('.result, .result-op, .c-container')
+        logger.info(f"找到 {len(containers)} 个搜索结果容器")
+        
+        for container in containers:
             try:
                 # 提取标题和链接
                 h3 = container.select_one('h3')
@@ -78,7 +99,10 @@ def search_baidu(keyword, page=1):
                 })
                 
             except Exception as e:
+                logger.error(f"解析结果时出错: {str(e)}")
                 continue
+        
+        logger.info(f"成功解析 {len(results)} 个搜索结果")
         
         return {
             'status': 'success',
@@ -91,6 +115,7 @@ def search_baidu(keyword, page=1):
         }
         
     except Exception as e:
+        logger.error(f"搜索过程中出错: {str(e)}")
         return {
             'status': 'error',
             'message': str(e)
@@ -105,6 +130,8 @@ def search_google(keyword, page=1):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'max-age=0',
+            'Upgrade-Insecure-Requests': '1'
         }
         session.headers.update(headers)
         
@@ -112,10 +139,15 @@ def search_google(keyword, page=1):
             'q': keyword,
             'start': str((page - 1) * 10),
             'num': '10',
+            'hl': 'en',
+            'gl': 'us'
         }
         
-        response = session.get('https://www.google.com/search', params=params)
+        logger.info(f"正在执行Google搜索: {keyword}")
+        response = session.get('https://www.google.com/search', params=params, timeout=10)
         response.raise_for_status()
+        
+        logger.info(f"Google响应状态码: {response.status_code}")
         
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
@@ -143,8 +175,11 @@ def search_google(keyword, page=1):
                     'source': 'google',
                 })
                 
-            except Exception:
+            except Exception as e:
+                logger.error(f"解析Google结果时出错: {str(e)}")
                 continue
+        
+        logger.info(f"Google搜索成功解析 {len(results)} 个结果")
         
         return {
             'status': 'success',
@@ -156,6 +191,7 @@ def search_google(keyword, page=1):
             }
         }
     except Exception as e:
+        logger.error(f"Google搜索过程中出错: {str(e)}")
         return {
             'status': 'error',
             'message': str(e)
@@ -170,6 +206,8 @@ def search_bing(keyword, page=1):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'max-age=0',
+            'Upgrade-Insecure-Requests': '1'
         }
         session.headers.update(headers)
         
@@ -177,10 +215,14 @@ def search_bing(keyword, page=1):
             'q': keyword,
             'first': str((page - 1) * 10 + 1),
             'count': '10',
+            'setlang': 'en'
         }
         
-        response = session.get('https://www.bing.com/search', params=params)
+        logger.info(f"正在执行Bing搜索: {keyword}")
+        response = session.get('https://www.bing.com/search', params=params, timeout=10)
         response.raise_for_status()
+        
+        logger.info(f"Bing响应状态码: {response.status_code}")
         
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
@@ -208,8 +250,11 @@ def search_bing(keyword, page=1):
                     'source': 'bing',
                 })
                 
-            except Exception:
+            except Exception as e:
+                logger.error(f"解析Bing结果时出错: {str(e)}")
                 continue
+        
+        logger.info(f"Bing搜索成功解析 {len(results)} 个结果")
         
         return {
             'status': 'success',
@@ -221,6 +266,7 @@ def search_bing(keyword, page=1):
             }
         }
     except Exception as e:
+        logger.error(f"Bing搜索过程中出错: {str(e)}")
         return {
             'status': 'error',
             'message': str(e)
@@ -228,12 +274,13 @@ def search_bing(keyword, page=1):
 
 def handler(event, context):
     """Netlify function handler"""
-    # 获取查询参数
     try:
         params = event.get('queryStringParameters', {})
         keyword = params.get('q')
         engine = params.get('engine', 'baidu').lower()
         page = int(params.get('page', '1'))
+
+        logger.info(f"收到搜索请求 - 引擎: {engine}, 关键词: {keyword}, 页码: {page}")
 
         if not keyword:
             return {
@@ -262,8 +309,6 @@ def handler(event, context):
 
         search_function = search_functions[engine]
         result = search_function(keyword, page)
-
-        result['data']['engine'] = engine
         
         return {
             'statusCode': 200,
@@ -275,13 +320,13 @@ def handler(event, context):
         }
         
     except Exception as e:
-        result = {
-            'status': 'error',
-            'message': str(e)
-        }
+        logger.error(f"处理请求时出错: {str(e)}")
         return {
             'statusCode': 500,
-            'body': json.dumps(result, ensure_ascii=False)
+            'body': json.dumps({
+                'status': 'error',
+                'message': str(e)
+            }, ensure_ascii=False)
         }
 
 if __name__ == "__main__":
@@ -294,4 +339,4 @@ if __name__ == "__main__":
         }
     }
     response = handler(test_event, None)
-    print(response['body'])
+    print(json.dumps(json.loads(response['body']), ensure_ascii=False, indent=2))
