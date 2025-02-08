@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 from typing import Dict, List, Optional, Tuple
+import urllib.parse
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +29,16 @@ def create_session() -> requests.Session:
     session.headers.update(HEADERS)
     return session
 
+def clean_text(text: str) -> str:
+    """清理文本内容"""
+    if not text:
+        return ""
+    return ' '.join(text.strip().split())
+
+def get_text_content(elem) -> str:
+    """获取元素的文本内容"""
+    return clean_text(elem.get_text()) if elem else ""
+
 def parse_search_page(html: str, rank_start: int = 0) -> Tuple[List[Dict], Optional[str]]:
     """解析百度搜索结果页面"""
     try:
@@ -42,37 +53,58 @@ def parse_search_page(html: str, rank_start: int = 0) -> Tuple[List[Dict], Optio
         # 遍历搜索结果
         for div in content_left.find_all(['div', 'article'], class_=['result', 'c-container', 'result-op']):
             try:
-                # 提取标题
-                h3 = div.find(['h3', 'article'])
-                if not h3:
-                    continue
-                    
-                a_tag = h3.find('a')
-                if not a_tag:
+                # 提取标题和链接
+                title_elem = div.find(['h3', 'h2', 'article'])
+                if not title_elem:
                     continue
                 
-                title = a_tag.get_text().strip()
-                url = a_tag.get('href', '')
+                link_elem = title_elem.find('a')
+                if not link_elem:
+                    continue
+                
+                title = get_text_content(link_elem)
+                link = link_elem.get('href', '')
+                
+                if not title or not link:
+                    continue
+                
+                # 处理链接
+                if not link.startswith(('http://', 'https://')):
+                    link = 'https://www.baidu.com' + link
                 
                 # 提取摘要
-                abstract_div = div.find(['div', 'span'], class_=['c-abstract', 'content-right'])
                 abstract = ''
-                if abstract_div:
-                    abstract = abstract_div.get_text().strip()
-                else:
-                    # 尝试获取其他可能包含摘要的元素
+                
+                # 尝试不同的摘要容器类
+                abstract_classes = ['c-abstract', 'content-right', 'c-span-last', 'c-color-text']
+                for class_name in abstract_classes:
+                    abstract_elem = div.find(['div', 'span'], class_=class_name)
+                    if abstract_elem:
+                        abstract = get_text_content(abstract_elem)
+                        break
+                
+                # 如果还没找到摘要，尝试其他方法
+                if not abstract:
+                    # 尝试获取第一个非空的div文本
                     for elem in div.find_all(['div', 'p']):
-                        if elem.get('class') and any(c in ['content-right', 'c-span-last'] for c in elem['class']):
-                            abstract = elem.get_text().strip()
+                        if elem.get_text().strip() and elem != title_elem:
+                            abstract = get_text_content(elem)
                             break
                 
+                # 如果还是没有摘要，使用整个容器的文本
+                if not abstract:
+                    text = get_text_content(div)
+                    if text != title:
+                        abstract = text
+                
+                # 处理摘要长度
                 if abstract and len(abstract) > ABSTRACT_MAX_LENGTH:
                     abstract = abstract[:ABSTRACT_MAX_LENGTH] + '...'
                 
                 rank_start += 1
                 results.append({
                     'title': title,
-                    'url': url,
+                    'link': link,
                     'description': abstract,
                     'rank': rank_start,
                     'source': 'baidu'
@@ -104,8 +136,12 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
         # 访问百度首页获取Cookie
         session.get('https://www.baidu.com/', timeout=10)
         
+        # 编码关键词
+        encoded_keyword = urllib.parse.quote(keyword)
+        
         # 构建搜索URL
-        search_url = f'https://www.baidu.com/s?ie=utf-8&wd={keyword}&pn={(page-1)*10}'
+        search_url = f'https://www.baidu.com/s?ie=utf-8&wd={encoded_keyword}&pn={(page-1)*10}'
+        logger.info(f"搜索URL: {search_url}")
         
         # 执行搜索
         response = session.get(search_url, timeout=10)
