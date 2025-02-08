@@ -5,6 +5,8 @@
 [build.environment]
   # 设置Python版本
   PYTHON_VERSION = "3.9"
+  # ScrapeOps API密钥 (需要在Netlify界面设置)
+  SCRAPEOPS_API_KEY = ""
 
 [functions]
   # 设置函数目录
@@ -25,4 +27,4 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
-    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/*;"
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://api.scrapeops.io/*;"
