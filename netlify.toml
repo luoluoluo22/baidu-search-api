@@ -1,26 +1,14 @@
 [build]
-  command = "npm install && npm run build"
-  functions = "netlify/functions"
   publish = "public"
+  functions = "netlify/functions"
 
 [build.environment]
-  # 设置Python版本
-  PYTHON_VERSION = "3.11"
-  # pip配置
-  PIP_NO_CACHE_DIR = "false"
-  # 其他环境变量
+  PYTHON_VERSION = "3.9"
   NODE_VERSION = "18"
 
 [functions]
-  # 函数配置
   directory = "netlify/functions"
-  external_node_modules = ["@netlify/functions"]
   node_bundler = "esbuild"
-
-[functions."search"]
-  # search函数的特定配置
-  included_files = ["requirements.txt"]
-  external_node_modules = ["@netlify/functions"]
 
 [[redirects]]
   from = "/api/*"
@@ -28,24 +16,9 @@
   status = 200
   force = true
 
-[build.processing]
-  skip_processing = false
-
-[dev]
-  framework = "#static"
-  command = "npm run dev"
-  targetPort = 8888
-  port = 8888
-  publish = "public"
-  autoLaunch = false
-
 [[headers]]
   for = "/*"
   [headers.values]
     Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
-    Content-Security-Policy = "frame-ancestors 'self'"
-    X-Frame-Options = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
