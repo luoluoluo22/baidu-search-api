@@ -11,64 +11,82 @@ logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu']
 
+def get_baidu_suggestions(keyword):
+    """获取百度搜索建议"""
+    try:
+        url = 'https://suggestion.baidu.com/su'
+        params = {
+            'wd': keyword,
+            'action': 'opensearch'
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        response.encoding = 'utf-8'
+        return response.json()
+    except Exception as e:
+        logger.error(f"获取搜索建议时出错: {str(e)}")
+        return None
+
+def get_baidu_related(keyword):
+    """获取百度相关搜索"""
+    try:
+        url = 'https://www.baidu.com/sugrec'
+        params = {
+            'prod': 'pc',
+            'wd': keyword
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        response.encoding = 'utf-8'
+        
+        try:
+            data = json.loads(response.text)
+            if isinstance(data, dict) and 'g' in data:
+                return data['g']
+        except json.JSONDecodeError:
+            pass
+        
+        return []
+    except Exception as e:
+        logger.error(f"获取相关搜索时出错: {str(e)}")
+        return []
+
 def search_baidu(keyword, page=1):
     """执行百度搜索"""
     try:
-        # 首先获取搜索建议
-        logger.info(f"正在获取搜索建议: {keyword}")
-        suggest_url = f'https://suggestion.baidu.com/su?wd={quote(keyword)}&action=opensearch'
-        response = requests.get(suggest_url, timeout=10)
-        response.raise_for_status()
+        results = []
         
-        suggestions = response.json()
-        suggest_results = []
-        
-        # 处理搜索建议结果
-        if len(suggestions) > 1 and isinstance(suggestions[1], list):
+        # 1. 获取搜索建议
+        suggestions = get_baidu_suggestions(keyword)
+        if suggestions and len(suggestions) > 1 and isinstance(suggestions[1], list):
             for suggestion in suggestions[1]:
-                suggest_results.append({
+                results.append({
                     'title': suggestion,
                     'link': f'https://www.baidu.com/s?wd={quote(suggestion)}',
-                    'description': f'搜索建议: {suggestion}',
+                    'description': '搜索建议',
                     'type': 'suggestion'
                 })
         
-        # 然后获取相关搜索
-        logger.info(f"正在获取相关搜索: {keyword}")
-        related_url = 'https://www.baidu.com/sugrec'
-        params = {
-            'prod': 'pc',
-            'wd': keyword,
-            'cb': 'null'
-        }
+        # 2. 获取相关搜索
+        related = get_baidu_related(keyword)
+        for item in related:
+            if isinstance(item, dict) and 'q' in item:
+                results.append({
+                    'title': item['q'],
+                    'link': f'https://www.baidu.com/s?wd={quote(item["q"])}',
+                    'description': '相关搜索',
+                    'type': 'related'
+                })
         
-        response = requests.get(related_url, params=params, timeout=10)
-        response.raise_for_status()
-        
-        # 移除 "null(" 和最后的 ")"
-        related_data = response.text.strip('null()')
-        related_json = json.loads(related_data)
-        
-        # 处理相关搜索结果
-        if 'g' in related_json:
-            for item in related_json['g']:
-                if 'q' in item:
-                    suggest_results.append({
-                        'title': item['q'],
-                        'link': f'https://www.baidu.com/s?wd={quote(item["q"])}',
-                        'description': f'相关搜索: {item["q"]}',
-                        'type': 'related'
-                    })
-        
-        # 对结果进行排序和去重
+        # 去重
         seen = set()
         unique_results = []
-        for item in suggest_results:
+        for item in results:
             if item['title'] not in seen:
                 seen.add(item['title'])
                 unique_results.append(item)
         
-        # 分页处理
+        # 分页
         start_idx = (page - 1) * 10
         end_idx = start_idx + 10
         paged_results = unique_results[start_idx:end_idx]
@@ -94,8 +112,8 @@ def handler(event, context):
     """Netlify function handler"""
     try:
         params = event.get('queryStringParameters', {})
-        keyword = params.get('q')
-        engine = params.get('engine', 'baidu').lower()
+        keyword = params.get('q', '').strip()
+        engine = params.get('engine', 'baidu').lower().strip()
         page = int(params.get('page', '1'))
 
         logger.info(f"收到搜索请求 - 引擎: {engine}, 关键词: {keyword}, 页码: {page}")
@@ -118,32 +136,33 @@ def handler(event, context):
                 }, ensure_ascii=False)
             }
 
-        # 目前只支持百度搜索
         result = search_baidu(keyword, page)
         
-        if result['status'] == 'error':
-            return {
-                'statusCode': 500,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps(result, ensure_ascii=False)
-            }
-        
-        return {
-            'statusCode': 200,
+        response = {
             'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps(result, ensure_ascii=False)
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'no-cache'
+            }
         }
+        
+        if result['status'] == 'error':
+            response['statusCode'] = 500
+            response['body'] = json.dumps(result, ensure_ascii=False)
+        else:
+            response['statusCode'] = 200
+            response['body'] = json.dumps(result, ensure_ascii=False)
+        
+        return response
         
     except Exception as e:
         logger.error(f"处理请求时出错: {str(e)}")
         return {
             'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            },
             'body': json.dumps({
                 'status': 'error',
                 'message': str(e)
