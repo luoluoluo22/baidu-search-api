@@ -1,0 +1,10 @@
+{
+  "name": "baidu-search-api",
+  "version": "1.0.0",
+  "description": "Baidu Search API for Netlify Functions",
+  "main": "search.py",
+  "scripts": {
+    "build": "pip install -r requirements.txt"
+  },
+  "dependencies": {}
+}
