@@ -10,12 +10,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu']
-REQUEST_TIMEOUT = 3  # 超时时间设为3秒
+REQUEST_TIMEOUT = 2  # 缩短超时时间到2秒
 
 # 请求头信息
 HEADERS = {
-    "Accept": "application/json",
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
+    "Accept": "*/*",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+    "Referer": "https://m.baidu.com/"
 }
 
 def clean_text(text: str) -> str:
@@ -27,15 +28,29 @@ def clean_text(text: str) -> str:
     # 移除多余空白
     return ' '.join(text.strip().split())
 
+def parse_jsonp(jsonp_str: str) -> Dict:
+    """解析JSONP响应"""
+    try:
+        # 移除JSONP包装
+        json_str = jsonp_str.strip()
+        if json_str.startswith('window.baidu.sug('):
+            json_str = json_str[len('window.baidu.sug('):-1]
+        elif json_str.startswith('{'):
+            return json.loads(json_str)
+        return json.loads(json_str)
+    except Exception as e:
+        logger.error(f"解析JSONP失败: {str(e)}")
+        return {}
+
 def search_baidu(keyword: str, page: int = 1) -> Dict:
-    """使用百度搜索建议API"""
+    """使用百度JSONP搜索建议API"""
     try:
         # 构建请求
         params = {
             'wd': keyword,
-            'action': 'opensearch',
+            'cb': 'window.baidu.sug',
             'ie': 'utf-8',
-            'from': 'mobile'
+            'prod': 'wise'  # 使用移动版API
         }
         
         # 执行请求
@@ -48,16 +63,17 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
         response.raise_for_status()
         response.encoding = 'utf-8'
         
-        # 解析结果
-        suggestions = response.json()
+        # 解析JSONP响应
+        data = parse_jsonp(response.text)
         results = []
         
-        if len(suggestions) > 1 and isinstance(suggestions[1], list):
+        if isinstance(data, dict) and 's' in data:
+            suggestions = data['s']
             start_idx = (page - 1) * 10
             end_idx = start_idx + 10
             
             # 只处理当前页的内容
-            for idx, sugg in enumerate(suggestions[1][start_idx:end_idx], start=start_idx+1):
+            for idx, sugg in enumerate(suggestions[start_idx:end_idx], start=start_idx+1):
                 # 清理文本
                 cleaned_sugg = clean_text(sugg)
                 if not cleaned_sugg:
@@ -76,9 +92,9 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
             'data': {
                 'keyword': keyword,
                 'page': page,
-                'total_found': len(suggestions[1]) if len(suggestions) > 1 else 0,
+                'total_found': len(data.get('s', [])),
                 'results': results,
-                'has_next': len(suggestions[1]) > end_idx if len(suggestions) > 1 else False
+                'has_next': len(data.get('s', [])) > end_idx
             }
         }
         
@@ -114,6 +130,10 @@ def handler(event, context):
         if not keyword:
             return {
                 'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*'
+                },
                 'body': json.dumps({
                     'status': 'error',
                     'message': '请提供搜索关键词 (使用q参数)'
@@ -123,6 +143,10 @@ def handler(event, context):
         if engine not in SEARCH_ENGINES:
             return {
                 'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*'
+                },
                 'body': json.dumps({
                     'status': 'error',
                     'message': f'不支持的搜索引擎。支持的引擎: {", ".join(SEARCH_ENGINES)}'
@@ -132,13 +156,14 @@ def handler(event, context):
         # 执行搜索
         result = search_baidu(keyword, page)
         
-        # 返回结果
+        # 返回结果，添加缓存控制
         return {
             'statusCode': 200 if result['status'] == 'success' else 500,
             'headers': {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
-                'Cache-Control': 'public, max-age=60'  # 缓存1分钟
+                'Cache-Control': 'public, max-age=60',  # 缓存1分钟
+                'Vary': 'Accept-Encoding'
             },
             'body': json.dumps(result, ensure_ascii=False)
         }
@@ -147,6 +172,10 @@ def handler(event, context):
         logger.error(f"处理请求时出错: {str(e)}")
         return {
             'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            },
             'body': json.dumps({
                 'status': 'error',
                 'message': str(e)

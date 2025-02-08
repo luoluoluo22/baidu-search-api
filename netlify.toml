@@ -3,27 +3,16 @@
   functions = "netlify/functions"
 
 [build.environment]
-  # 设置Python版本
   PYTHON_VERSION = "3.9"
 
 [functions]
-  # 设置函数目录
   directory = "netlify/functions"
-  # 设置包含的文件
   included_files = ["*.py", "requirements.txt"]
-  # 设置处理器
-  external_node_modules = []
   node_bundler = "esbuild"
 
 [functions.search]
-  # search函数的特定配置
   handler = "search.handler"
-  # 增加超时时间到30秒
-  timeout = "30s"
-  # 增加内存限制到1GB
-  memory = 1024
-  # 增加并发数
-  maxConcurrency = 5
+  timeout = "3"  # 设置超时时间为3秒
 
 [[headers]]
   for = "/*"
@@ -31,4 +20,5 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
-    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://suggestion.baidu.com/* https://www.baidu.com/*;"
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://suggestion.baidu.com/*;"
+    Cache-Control = "public, max-age=60"
