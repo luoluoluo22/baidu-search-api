@@ -13,13 +13,15 @@ logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu', 'bing', 'google']
 
+MOBILE_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1'
+
 def create_session():
     """创建一个带重试机制的会话"""
     session = requests.Session()
     retry_strategy = Retry(
-        total=3,  # 最大重试次数
-        backoff_factor=1,  # 重试间隔
-        status_forcelist=[500, 502, 503, 504]  # 需要重试的状态码
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[500, 502, 503, 504]
     )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("http://", adapter)
@@ -37,18 +39,16 @@ def search_baidu(keyword, page=1):
     try:
         session = create_session()
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'User-Agent': MOBILE_USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Cache-Control': 'max-age=0'
         }
         session.headers.update(headers)
         
-        # 访问首页获取cookie
-        logger.info("正在访问百度首页...")
-        index_response = session.get('https://www.baidu.com', timeout=10)
+        # 访问移动版百度
+        logger.info("正在访问百度移动版...")
+        index_response = session.get('https://m.baidu.com/', timeout=10)
         index_response.raise_for_status()
         
         # 添加延迟
@@ -56,14 +56,13 @@ def search_baidu(keyword, page=1):
         
         # 执行搜索
         params = {
-            'wd': keyword,
+            'word': keyword,
             'pn': str((page - 1) * 10),
-            'rn': '10',
-            'ie': 'utf-8'
+            'rn': '10'
         }
         
         logger.info(f"正在搜索关键词: {keyword}")
-        response = session.get('https://www.baidu.com/s', params=params, timeout=10)
+        response = session.get('https://m.baidu.com/s', params=params, timeout=10)
         response.raise_for_status()
         
         # 解析结果
@@ -71,43 +70,34 @@ def search_baidu(keyword, page=1):
         results = []
         
         # 查找搜索结果
-        for container in soup.select('.result, .result-op, .c-container'):
+        for div in soup.select('.c-result'):
             try:
-                # 提取标题和链接
-                h3 = container.select_one('h3')
-                if not h3:
+                title_elem = div.select_one('.c-title')
+                if not title_elem:
                     continue
                     
-                a_tag = h3.select_one('a')
+                a_tag = title_elem.select_one('a')
                 if not a_tag:
                     continue
                 
                 title = clean_text(a_tag.get_text())
                 link = a_tag.get('href', '')
                 
-                # 提取描述
-                abstract = container.select_one('.content-right, .c-abstract')
-                description = clean_text(abstract.get_text()) if abstract else ""
-                
-                # 提取来源
-                source = container.select_one('.c-showurl, .source')
-                source_text = clean_text(source.get_text()) if source else ""
-                
-                # 提取时间
-                time_elem = container.select_one('.c-color-gray2')
-                publish_time = clean_text(time_elem.get_text()) if time_elem else ""
+                desc_elem = div.select_one('.c-abstract')
+                description = clean_text(desc_elem.get_text()) if desc_elem else ""
                 
                 results.append({
                     'title': title,
                     'link': link,
                     'description': description,
-                    'source': source_text,
-                    'publish_time': publish_time
+                    'source': 'baidu'
                 })
                 
             except Exception as e:
                 logger.error(f"解析结果时出错: {str(e)}")
                 continue
+        
+        logger.info(f"成功解析 {len(results)} 个搜索结果")
         
         return {
             'status': 'success',
@@ -131,20 +121,17 @@ def search_google(keyword, page=1):
     try:
         session = create_session()
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'User-Agent': MOBILE_USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'max-age=0'
+            'Accept-Encoding': 'gzip, deflate, br'
         }
         session.headers.update(headers)
         
         params = {
             'q': keyword,
             'start': str((page - 1) * 10),
-            'num': '10',
-            'hl': 'en',
-            'gl': 'us'
+            'num': '10'
         }
         
         logger.info(f"正在执行Google搜索: {keyword}")
@@ -154,9 +141,9 @@ def search_google(keyword, page=1):
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
         
-        for div in soup.select('div.g'):
+        for div in soup.select('div.xpd'):
             try:
-                title_element = div.select_one('h3')
+                title_element = div.select_one('div[role="heading"]')
                 if not title_element:
                     continue
                     
@@ -167,17 +154,18 @@ def search_google(keyword, page=1):
                 title = clean_text(title_element.get_text())
                 link = link_element.get('href', '')
                 
-                snippet = div.select_one('.VwiC3b')
+                snippet = div.select_one('div.BNeawe')
                 description = clean_text(snippet.get_text()) if snippet else ""
                 
                 results.append({
                     'title': title,
                     'link': link,
                     'description': description,
-                    'source': 'google',
+                    'source': 'google'
                 })
                 
-            except Exception:
+            except Exception as e:
+                logger.error(f"解析Google结果时出错: {str(e)}")
                 continue
         
         return {
@@ -201,19 +189,17 @@ def search_bing(keyword, page=1):
     try:
         session = create_session()
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'User-Agent': MOBILE_USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'max-age=0'
+            'Accept-Encoding': 'gzip, deflate, br'
         }
         session.headers.update(headers)
         
         params = {
             'q': keyword,
             'first': str((page - 1) * 10 + 1),
-            'count': '10',
-            'setlang': 'en'
+            'count': '10'
         }
         
         logger.info(f"正在执行Bing搜索: {keyword}")
@@ -223,7 +209,7 @@ def search_bing(keyword, page=1):
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
         
-        for li in soup.select('.b_algo'):
+        for li in soup.select('li.b_algo'):
             try:
                 title_element = li.select_one('h2')
                 if not title_element:
@@ -243,10 +229,11 @@ def search_bing(keyword, page=1):
                     'title': title,
                     'link': link,
                     'description': description,
-                    'source': 'bing',
+                    'source': 'bing'
                 })
                 
-            except Exception:
+            except Exception as e:
+                logger.error(f"解析Bing结果时出错: {str(e)}")
                 continue
         
         return {
@@ -302,6 +289,16 @@ def handler(event, context):
 
         search_function = search_functions[engine]
         result = search_function(keyword, page)
+        
+        if result['status'] == 'error':
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps(result, ensure_ascii=False)
+            }
         
         return {
             'statusCode': 200,
