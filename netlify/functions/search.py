@@ -4,8 +4,8 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 import time
-import os
-from urllib.parse import urlencode
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -13,12 +13,18 @@ logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu', 'bing', 'google']
 
-# 代理服务配置
-PROXY_URLS = {
-    'baidu': 'http://api.scrapeops.io/v1/browser',
-    'google': 'http://api.scrapeops.io/v1/browser',
-    'bing': 'http://api.scrapeops.io/v1/browser'
-}
+def create_session():
+    """创建一个带重试机制的会话"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,  # 最大重试次数
+        backoff_factor=1,  # 重试间隔
+        status_forcelist=[500, 502, 503, 504]  # 需要重试的状态码
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 def clean_text(text):
     """清理文本内容"""
@@ -26,43 +32,30 @@ def clean_text(text):
         return ""
     return ' '.join(text.split())
 
-def get_scrapeops_url(url, params=None):
-    """构建ScrapeOps代理URL"""
-    scrapeops_params = {
-        'api_key': os.environ.get('SCRAPEOPS_API_KEY', ''),
-        'url': url
-    }
-    if params:
-        scrapeops_params['url'] += '?' + urlencode(params)
-    
-    return PROXY_URLS['baidu'], scrapeops_params
-
 def search_baidu(keyword, page=1):
     """执行百度搜索"""
     try:
-        session = requests.Session()
-        base_headers = {
+        session = create_session()
+        headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
-            'Cache-Control': 'max-age=0',
-            'Upgrade-Insecure-Requests': '1'
+            'Cache-Control': 'max-age=0'
         }
-        session.headers.update(base_headers)
+        session.headers.update(headers)
         
-        # 使用代理服务访问首页
-        logger.info("正在通过代理访问百度首页...")
-        proxy_url, proxy_params = get_scrapeops_url('https://www.baidu.com')
-        index_response = session.get(proxy_url, params=proxy_params, timeout=30)
+        # 访问首页获取cookie
+        logger.info("正在访问百度首页...")
+        index_response = session.get('https://www.baidu.com', timeout=10)
         index_response.raise_for_status()
         
         # 添加延迟
-        time.sleep(2)
+        time.sleep(1)
         
         # 执行搜索
-        search_params = {
+        params = {
             'wd': keyword,
             'pn': str((page - 1) * 10),
             'rn': '10',
@@ -70,23 +63,17 @@ def search_baidu(keyword, page=1):
         }
         
         logger.info(f"正在搜索关键词: {keyword}")
-        proxy_url, proxy_params = get_scrapeops_url('https://www.baidu.com/s', search_params)
-        response = session.get(proxy_url, params=proxy_params, timeout=30)
+        response = session.get('https://www.baidu.com/s', params=params, timeout=10)
         response.raise_for_status()
-        
-        # 记录响应内容
-        logger.info(f"响应状态码: {response.status_code}")
         
         # 解析结果
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
         
         # 查找搜索结果
-        containers = soup.select('.result, .result-op, .c-container')
-        logger.info(f"找到 {len(containers)} 个搜索结果容器")
-        
-        for container in containers:
+        for container in soup.select('.result, .result-op, .c-container'):
             try:
+                # 提取标题和链接
                 h3 = container.select_one('h3')
                 if not h3:
                     continue
@@ -98,12 +85,15 @@ def search_baidu(keyword, page=1):
                 title = clean_text(a_tag.get_text())
                 link = a_tag.get('href', '')
                 
+                # 提取描述
                 abstract = container.select_one('.content-right, .c-abstract')
                 description = clean_text(abstract.get_text()) if abstract else ""
                 
+                # 提取来源
                 source = container.select_one('.c-showurl, .source')
                 source_text = clean_text(source.get_text()) if source else ""
                 
+                # 提取时间
                 time_elem = container.select_one('.c-color-gray2')
                 publish_time = clean_text(time_elem.get_text()) if time_elem else ""
                 
@@ -118,8 +108,6 @@ def search_baidu(keyword, page=1):
             except Exception as e:
                 logger.error(f"解析结果时出错: {str(e)}")
                 continue
-        
-        logger.info(f"成功解析 {len(results)} 个搜索结果")
         
         return {
             'status': 'success',
@@ -141,18 +129,17 @@ def search_baidu(keyword, page=1):
 def search_google(keyword, page=1):
     """执行Google搜索"""
     try:
-        session = requests.Session()
-        base_headers = {
+        session = create_session()
+        headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'max-age=0',
-            'Upgrade-Insecure-Requests': '1'
+            'Cache-Control': 'max-age=0'
         }
-        session.headers.update(base_headers)
+        session.headers.update(headers)
         
-        search_params = {
+        params = {
             'q': keyword,
             'start': str((page - 1) * 10),
             'num': '10',
@@ -161,11 +148,8 @@ def search_google(keyword, page=1):
         }
         
         logger.info(f"正在执行Google搜索: {keyword}")
-        proxy_url, proxy_params = get_scrapeops_url('https://www.google.com/search', search_params)
-        response = session.get(proxy_url, params=proxy_params, timeout=30)
+        response = session.get('https://www.google.com/search', params=params, timeout=10)
         response.raise_for_status()
-        
-        logger.info(f"Google响应状态码: {response.status_code}")
         
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
@@ -193,11 +177,8 @@ def search_google(keyword, page=1):
                     'source': 'google',
                 })
                 
-            except Exception as e:
-                logger.error(f"解析Google结果时出错: {str(e)}")
+            except Exception:
                 continue
-        
-        logger.info(f"Google搜索成功解析 {len(results)} 个结果")
         
         return {
             'status': 'success',
@@ -218,18 +199,17 @@ def search_google(keyword, page=1):
 def search_bing(keyword, page=1):
     """执行Bing搜索"""
     try:
-        session = requests.Session()
-        base_headers = {
+        session = create_session()
+        headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'max-age=0',
-            'Upgrade-Insecure-Requests': '1'
+            'Cache-Control': 'max-age=0'
         }
-        session.headers.update(base_headers)
+        session.headers.update(headers)
         
-        search_params = {
+        params = {
             'q': keyword,
             'first': str((page - 1) * 10 + 1),
             'count': '10',
@@ -237,11 +217,8 @@ def search_bing(keyword, page=1):
         }
         
         logger.info(f"正在执行Bing搜索: {keyword}")
-        proxy_url, proxy_params = get_scrapeops_url('https://www.bing.com/search', search_params)
-        response = session.get(proxy_url, params=proxy_params, timeout=30)
+        response = session.get('https://www.bing.com/search', params=params, timeout=10)
         response.raise_for_status()
-        
-        logger.info(f"Bing响应状态码: {response.status_code}")
         
         soup = BeautifulSoup(response.text, 'html.parser')
         results = []
@@ -269,11 +246,8 @@ def search_bing(keyword, page=1):
                     'source': 'bing',
                 })
                 
-            except Exception as e:
-                logger.error(f"解析Bing结果时出错: {str(e)}")
+            except Exception:
                 continue
-        
-        logger.info(f"Bing搜索成功解析 {len(results)} 个结果")
         
         return {
             'status': 'success',
@@ -319,15 +293,6 @@ def handler(event, context):
                 }, ensure_ascii=False)
             }
 
-        if not os.environ.get('SCRAPEOPS_API_KEY'):
-            return {
-                'statusCode': 500,
-                'body': json.dumps({
-                    'status': 'error',
-                    'message': '缺少必要的API密钥配置'
-                }, ensure_ascii=False)
-            }
-
         # 根据选择的搜索引擎调用对应的函数
         search_functions = {
             'baidu': search_baidu,
@@ -359,7 +324,6 @@ def handler(event, context):
 
 if __name__ == "__main__":
     # 用于本地测试
-    os.environ['SCRAPEOPS_API_KEY'] = 'your-api-key-here'  # 仅用于本地测试
     test_event = {
         'queryStringParameters': {
             'q': 'python',
