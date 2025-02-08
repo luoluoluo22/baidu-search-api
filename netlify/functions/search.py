@@ -1,4 +1,3 @@
-import sys
 import json
 import requests
 import logging
@@ -10,14 +9,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SEARCH_ENGINES = ['baidu']
-REQUEST_TIMEOUT = 5
+REQUEST_TIMEOUT = 3  # 降低超时时间到3秒
 
 # 请求头信息
 HEADERS = {
-    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    "Referer": "https://m.baidu.com/"
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
 }
 
 def search_baidu(keyword: str, page: int = 1) -> Dict:
@@ -26,108 +24,62 @@ def search_baidu(keyword: str, page: int = 1) -> Dict:
         # 编码关键词
         encoded_keyword = urllib.parse.quote(keyword)
         
-        # 构建搜索URL
+        # 使用搜索建议API
+        suggest_url = 'https://suggestion.baidu.com/su'
         params = {
-            'word': encoded_keyword,
-            'pn': str((page - 1) * 10),
-            'rn': '10',
+            'wd': encoded_keyword,
+            'action': 'opensearch',
             'ie': 'utf-8',
-            'tn': 'baiduhome_pg',
-            'ct': '201326592',
-            'lm': '-1',
-            'si': 'm.baidu.com',
-            'rsv_pq': '1',
-            'sa': 'i_1'
+            'from': 'mobile'
         }
         
-        with requests.Session() as session:
-            session.headers.update(HEADERS)
-            
-            # 获取搜索建议
-            suggest_url = f'https://m.baidu.com/su'
-            suggest_params = {
-                'wd': keyword,
-                'action': 'opensearch',
-                'ie': 'utf-8'
+        # 执行请求
+        response = requests.get(
+            suggest_url,
+            params=params,
+            headers=HEADERS,
+            timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+        
+        # 解析结果
+        suggestions = response.json()
+        results = []
+        
+        if len(suggestions) > 1 and isinstance(suggestions[1], list):
+            for idx, sugg in enumerate(suggestions[1], start=1):
+                results.append({
+                    'title': sugg,
+                    'link': f'https://m.baidu.com/s?word={urllib.parse.quote(sugg)}',
+                    'description': f'搜索建议: {sugg}',
+                    'rank': idx,
+                    'source': 'baidu'
+                })
+        
+        # 分页处理
+        start_idx = (page - 1) * 10
+        end_idx = start_idx + 10
+        paged_results = results[start_idx:end_idx]
+        
+        return {
+            'status': 'success',
+            'data': {
+                'keyword': keyword,
+                'page': page,
+                'total_found': len(results),
+                'results': paged_results,
+                'has_next': len(results) > end_idx
             }
-            
-            suggest_response = session.get(
-                suggest_url, 
-                params=suggest_params, 
-                timeout=REQUEST_TIMEOUT
-            )
-            suggest_response.raise_for_status()
-            suggestions = suggest_response.json()
-            
-            # 转换建议为结果格式
-            results = []
-            
-            # 处理搜索建议
-            if len(suggestions) > 1 and isinstance(suggestions[1], list):
-                for idx, sugg in enumerate(suggestions[1], start=1):
-                    results.append({
-                        'title': sugg,
-                        'link': f'https://m.baidu.com/s?word={urllib.parse.quote(sugg)}',
-                        'description': f'搜索建议: {sugg}',
-                        'rank': idx,
-                        'source': 'baidu',
-                        'type': 'suggestion'
-                    })
-            
-            # 获取相关搜索
-            related_url = 'https://m.baidu.com/rec'
-            related_params = {
-                'platform': 'wise',
-                'word': keyword,
-                'qid': '',
-                'rtt': '1'
-            }
-            
-            related_response = session.get(
-                related_url, 
-                params=related_params, 
-                timeout=REQUEST_TIMEOUT
-            )
-            related_response.raise_for_status()
-            
-            try:
-                related_data = related_response.json()
-                if isinstance(related_data, dict) and 'data' in related_data:
-                    for item in related_data['data']:
-                        if isinstance(item, dict) and 'query' in item:
-                            results.append({
-                                'title': item['query'],
-                                'link': f'https://m.baidu.com/s?word={urllib.parse.quote(item["query"])}',
-                                'description': f'相关搜索: {item["query"]}',
-                                'rank': len(results) + 1,
-                                'source': 'baidu',
-                                'type': 'related'
-                            })
-            except:
-                pass
-            
-            # 分页处理
-            start_idx = (page - 1) * 10
-            end_idx = start_idx + 10
-            paged_results = results[start_idx:end_idx]
-            
-            return {
-                'status': 'success',
-                'data': {
-                    'keyword': keyword,
-                    'page': page,
-                    'total_found': len(results),
-                    'results': paged_results,
-                    'has_next': len(results) > end_idx
-                }
-            }
-            
+        }
+        
     except requests.Timeout:
+        logger.error("搜索请求超时")
         return {
             'status': 'error',
             'message': '搜索请求超时'
         }
     except requests.RequestException as e:
+        logger.error(f"网络请求错误: {str(e)}")
         return {
             'status': 'error',
             'message': f'网络请求错误: {str(e)}'
