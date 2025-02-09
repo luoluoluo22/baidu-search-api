@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>百度搜索 API</title>
+    <title>多引擎搜索</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -16,6 +16,18 @@
         display: flex;
         gap: 10px;
         margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .search-box {
+        flex: 1;
+        min-width: 300px;
+        display: flex;
+        gap: 10px;
+      }
+      .engine-select {
+        display: flex;
+        gap: 10px;
+        align-items: center;
       }
       input[type='text'] {
         flex: 1;
@@ -120,19 +132,43 @@
         color: white;
         border-color: #4285f4;
       }
+      .checkbox-group {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
-    <h1>百度搜索 API</h1>
+    <h1>多引擎搜索</h1>
 
     <div class="search-container">
-      <input
-        type="text"
-        id="searchInput"
-        placeholder="输入搜索关键词..."
-        autofocus
-      />
-      <button onclick="performSearch()">搜索</button>
+      <div class="search-box">
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="输入搜索关键词..."
+          autofocus
+        />
+        <button onclick="performSearch()">搜索</button>
+      </div>
+      <div class="engine-select">
+        <span>选择搜索引擎：</span>
+        <div class="checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" value="bing" checked /> Bing
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" value="yahoo" checked /> Yahoo
+          </label>
+        </div>
+      </div>
     </div>
 
     <div class="view-toggle">
@@ -167,8 +203,17 @@
         }
       }
 
+      function getSelectedEngines() {
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]')
+        const selectedEngines = Array.from(checkboxes)
+          .filter(cb => cb.checked)
+          .map(cb => cb.value)
+        return selectedEngines.join(',')
+      }
+
       async function performSearch() {
         const keyword = document.getElementById('searchInput').value
+        const engines = getSelectedEngines()
         const resultsDiv = document.getElementById('searchResults')
         const jsonView = document.getElementById('jsonView')
 
@@ -178,12 +223,18 @@
           return
         }
 
+        if (!engines) {
+          resultsDiv.innerHTML = '<div class="error">请选择至少一个搜索引擎</div>'
+          jsonView.textContent = ''
+          return
+        }
+
         resultsDiv.innerHTML = '<div class="loading">搜索中...</div>'
         jsonView.textContent = '搜索中...'
 
         try {
           const response = await fetch(
-            `/.netlify/functions/search?q=${encodeURIComponent(keyword)}`
+            `/.netlify/functions/search?q=${encodeURIComponent(keyword)}&engines=${engines}`
           )
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`)
@@ -197,45 +248,28 @@
           // 更新搜索结果视图
           if (data.status === 'success') {
             let html = `
-                        <div class="search-info">
-                            找到 ${data.data.total_found} 个结果
-                        </div>
-                    `
+              <div class="search-info">
+                找到 ${data.data.total_found} 个结果 (来自 ${data.data.engines.join(', ')})
+              </div>
+            `
 
             html += data.data.results
               .map(
                 (result) => `
-                        <div class="result-item">
-                            <a href="${
-                              result.link
-                            }" class="result-title" target="_blank">
-                                ${result.title}
-                            </a>
-                            <div class="result-description">
-                                ${result.description}
-                            </div>
-                            <div class="result-meta">
-                                ${
-                                  result.source
-                                    ? `
-                                    <div class="result-source">
-                                        <span>来源:</span> ${result.source}
-                                    </div>
-                                `
-                                    : ''
-                                }
-                                ${
-                                  result.publish_time
-                                    ? `
-                                    <div class="result-time">
-                                        <span>发布时间:</span> ${result.publish_time}
-                                    </div>
-                                `
-                                    : ''
-                                }
-                            </div>
-                        </div>
-                    `
+                  <div class="result-item">
+                    <a href="${result.link}" class="result-title" target="_blank">
+                      ${result.title}
+                    </a>
+                    <div class="result-description">
+                      ${result.description}
+                    </div>
+                    <div class="result-meta">
+                      <div class="result-source">
+                        <span>来源:</span> ${result.source}
+                      </div>
+                    </div>
+                  </div>
+                `
               )
               .join('')
 
@@ -253,18 +287,12 @@
         }
       }
 
-      // 支持回车搜索
-      document
-        .getElementById('searchInput')
-        .addEventListener('keypress', function (e) {
-          if (e.key === 'Enter') {
-            performSearch()
-          }
-        })
-
-      // 显示初始提示
-      document.getElementById('searchResults').innerHTML =
-        '<div class="search-info">请输入关键词开始搜索</div>'
+      // 监听回车键
+      document.getElementById('searchInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          performSearch()
+        }
+      })
     </script>
   </body>
 </html>

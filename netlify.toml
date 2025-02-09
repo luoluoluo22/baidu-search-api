@@ -12,7 +12,7 @@
 
 [functions.search]
   handler = "search.handler"
-  timeout = "3"  # 设置超时时间为3秒
+  timeout = "10"  # 增加超时时间到10秒，因为需要请求多个搜索引擎
 
 [[headers]]
   for = "/*"
@@ -20,5 +20,5 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
-    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://suggestion.baidu.com/*;"
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/*;"
     Cache-Control = "public, max-age=60"
