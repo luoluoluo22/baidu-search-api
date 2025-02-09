@@ -1,90 +1,90 @@
-# 百度搜索 API
+# 多引擎搜索 API
 
-基于Selenium的百度搜索API实现，支持Netlify Serverless部署。
+一个基于 Netlify Functions 的多搜索引擎聚合 API，支持 Bing 和 Yahoo 搜索。
 
-## 功能特点
+## API 使用方法
 
-- 使用Selenium实现可靠的搜索结果抓取
-- 完整的搜索结果解析（标题、链接、描述、来源、发布时间）
-- 提供结构化的JSON数据
-- 现代化的前端界面，支持搜索结果和JSON数据双视图
-- 完整的错误处理机制
-
-## API使用说明
-
-### 搜索接口
-
+### 接口地址
 ```
-GET /api/search?q={keyword}&page={page}
+https://incredible-bonbon-8786a7.netlify.app/.netlify/functions/search
+```
 
-参数：
-- q: 搜索关键词（必需）
-- page: 页码（可选，默认1）
+### 请求参数
 
-返回格式：
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|------|------|------|------|------|
+| q | string | 是 | 搜索关键词 | javascript教程 |
+| engines | string | 否 | 搜索引擎，多个用逗号分隔，默认为 bing,yahoo | bing 或 yahoo 或 bing,yahoo |
+
+### 示例请求
+
+```bash
+# 使用所有搜索引擎
+curl "https://incredible-bonbon-8786a7.netlify.app/.netlify/functions/search?q=javascript教程"
+
+# 仅使用 Bing
+curl "https://incredible-bonbon-8786a7.netlify.app/.netlify/functions/search?q=javascript教程&engines=bing"
+```
+
+### 返回数据格式
+
+```json
 {
   "status": "success",
   "data": {
-    "keyword": "搜索关键词",
-    "page": 1,
-    "total_found": 10,
+    "keyword": "javascript教程",
+    "engines": ["bing", "yahoo"],
     "results": [
       {
-        "title": "结果标题",
-        "link": "目标链接",
-        "description": "结果描述",
-        "source": "来源网站",
-        "publish_time": "发布时间"
+        "title": "搜索结果标题",
+        "link": "https://example.com",
+        "description": "搜索结果描述",
+        "source": "bing"
       }
-      // ... 更多结果
-    ]
+    ],
+    "total_found": 10
   }
+}
+```
+
+### 错误响应
+
+```json
+{
+  "status": "error",
+  "message": "错误信息"
 }
 ```
 
 ## 本地开发
 
-1. 安装依赖：
+1. 克隆仓库
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/luoluoluo22/baidu-search-api.git
+cd baidu-search-api
 ```
 
-2. 启动开发服务器：
+2. 安装依赖
 ```bash
-python test_server.py
+yarn install
 ```
 
-3. 访问测试页面：
-```
-http://localhost:8000
+3. 启动开发服务器
+```bash
+yarn dev
 ```
 
-## Netlify部署
+## 部署
 
-1. Fork本仓库
-2. 在Netlify中创建新项目
-3. 连接GitHub仓库
-4. 部署完成后即可通过 `https://你的域名/api/search` 访问API
+项目已配置好 Netlify 部署。只需将代码推送到 GitHub，Netlify 就会自动构建和部署。
 
 ## 技术栈
 
-- Backend:
-  - Python
-  - Selenium
-  - BeautifulSoup4
-  - Netlify Functions
+- Netlify Functions
+- Node.js
+- Cheerio (网页解析)
+- Node-fetch (网络请求)
 
-- Frontend:
-  - HTML5
-  - CSS3
-  - JavaScript
-
-## 注意事项
-
-- 需要在Netlify环境中安装Edge WebDriver
-- API有请求频率限制，建议添加适当的延迟
-- 建议在生产环境中添加缓存机制
-
-## License
+## 许可证
 
 MIT
