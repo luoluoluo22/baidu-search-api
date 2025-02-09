@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 from search_engines import Bing, Yahoo
 from typing import Dict, List
 from random import choice
@@ -68,8 +69,8 @@ def search_with_engine(engine_name: str, keyword: str, page: int = 1) -> Dict:
             'message': str(e)
         }
 
-def handler(event, context):
-    """Netlify function handler"""
+def handler(event):
+    """处理搜索请求"""
     try:
         # 获取请求参数
         params = event.get('queryStringParameters', {})
@@ -150,12 +151,7 @@ def handler(event, context):
         }
 
 if __name__ == "__main__":
-    # 用于本地测试
-    test_event = {
-        'queryStringParameters': {
-            'q': 'python',
-            'engines': 'bing,yahoo'
-        }
-    }
-    response = handler(test_event, None)
-    print(json.dumps(json.loads(response['body']), ensure_ascii=False, indent=2))
+    # 从标准输入读取参数
+    event = json.load(sys.stdin)
+    response = handler(event)
+    print(json.dumps(response, ensure_ascii=False))
