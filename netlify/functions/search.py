@@ -1,115 +1,66 @@
 import json
-import requests
 import logging
-from typing import Dict, List, Optional
-import urllib.parse
-import html
+from search_engines import Bing, Yahoo
+from typing import Dict, List
+from random import choice
+from time import sleep
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SEARCH_ENGINES = ['baidu']
-REQUEST_TIMEOUT = 2  # 缩短超时时间到2秒
+SEARCH_ENGINES = ['bing', 'yahoo']
 
-# 请求头信息
-HEADERS = {
-    "Accept": "*/*",
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-    "Referer": "https://m.baidu.com/"
-}
+# 随机 User-Agent
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+]
 
-def clean_text(text: str) -> str:
-    """清理文本内容"""
-    if not text:
-        return ""
-    # 解码HTML实体
-    text = html.unescape(text)
-    # 移除多余空白
-    return ' '.join(text.strip().split())
+def get_search_engine(engine_name: str):
+    """获取搜索引擎实例"""
+    engines = {
+        "bing": Bing(),
+        "yahoo": Yahoo(),
+    }
+    return engines.get(engine_name)
 
-def parse_jsonp(jsonp_str: str) -> Dict:
-    """解析JSONP响应"""
+def search_with_engine(engine_name: str, keyword: str, page: int = 1) -> Dict:
+    """使用指定搜索引擎搜索"""
     try:
-        # 移除JSONP包装
-        json_str = jsonp_str.strip()
-        if json_str.startswith('window.baidu.sug('):
-            json_str = json_str[len('window.baidu.sug('):-1]
-        elif json_str.startswith('{'):
-            return json.loads(json_str)
-        return json.loads(json_str)
-    except Exception as e:
-        logger.error(f"解析JSONP失败: {str(e)}")
-        return {}
+        engine = get_search_engine(engine_name)
+        if not engine:
+            return {
+                'status': 'error',
+                'message': f'不支持的搜索引擎: {engine_name}'
+            }
 
-def search_baidu(keyword: str, page: int = 1) -> Dict:
-    """使用百度JSONP搜索建议API"""
-    try:
-        # 构建请求
-        params = {
-            'wd': keyword,
-            'cb': 'window.baidu.sug',
-            'ie': 'utf-8',
-            'prod': 'wise'  # 使用移动版API
-        }
+        # 设置请求头
+        engine.set_headers({'User-Agent': choice(USER_AGENTS)})
         
-        # 执行请求
-        response = requests.get(
-            'https://suggestion.baidu.com/su',
-            params=params,
-            headers=HEADERS,
-            timeout=REQUEST_TIMEOUT
-        )
-        response.raise_for_status()
-        response.encoding = 'utf-8'
+        # 执行搜索，固定搜索2页
+        results = engine.search(keyword, pages=2)
+        search_results = []
         
-        # 解析JSONP响应
-        data = parse_jsonp(response.text)
-        results = []
-        
-        if isinstance(data, dict) and 's' in data:
-            suggestions = data['s']
-            start_idx = (page - 1) * 10
-            end_idx = start_idx + 10
-            
-            # 只处理当前页的内容
-            for idx, sugg in enumerate(suggestions[start_idx:end_idx], start=start_idx+1):
-                # 清理文本
-                cleaned_sugg = clean_text(sugg)
-                if not cleaned_sugg:
-                    continue
-                    
-                results.append({
-                    'title': cleaned_sugg,
-                    'link': f'https://m.baidu.com/s?word={urllib.parse.quote(cleaned_sugg)}',
-                    'description': f'相关搜索',
-                    'rank': idx,
-                    'source': 'baidu'
-                })
+        for i, result in enumerate(results.results(), 1):
+            search_results.append({
+                'title': result.get('title', 'No Title'),
+                'link': result.get('link', 'No Link'),
+                'description': result.get('text', 'No Description'),
+                'rank': i,
+                'source': engine_name
+            })
         
         return {
             'status': 'success',
             'data': {
                 'keyword': keyword,
-                'page': page,
-                'total_found': len(data.get('s', [])),
-                'results': results,
-                'has_next': len(data.get('s', [])) > end_idx
+                'engine': engine_name,
+                'results': search_results,
+                'total_found': len(search_results)
             }
         }
         
-    except requests.Timeout:
-        logger.error("搜索请求超时")
-        return {
-            'status': 'error',
-            'message': '搜索请求超时'
-        }
-    except requests.RequestException as e:
-        logger.error(f"网络请求错误: {str(e)}")
-        return {
-            'status': 'error',
-            'message': f'网络请求错误: {str(e)}'
-        }
     except Exception as e:
         logger.error(f"搜索过程中出错: {str(e)}")
         return {
@@ -123,8 +74,7 @@ def handler(event, context):
         # 获取请求参数
         params = event.get('queryStringParameters', {})
         keyword = params.get('q', '').strip()
-        engine = params.get('engine', 'baidu').lower().strip()
-        page = int(params.get('page', '1'))
+        engines = params.get('engines', 'bing,yahoo').lower().strip().split(',')
         
         # 验证参数
         if not keyword:
@@ -140,7 +90,9 @@ def handler(event, context):
                 }, ensure_ascii=False)
             }
 
-        if engine not in SEARCH_ENGINES:
+        # 验证搜索引擎
+        engines = [e for e in engines if e in SEARCH_ENGINES]
+        if not engines:
             return {
                 'statusCode': 400,
                 'headers': {
@@ -153,19 +105,34 @@ def handler(event, context):
                 }, ensure_ascii=False)
             }
             
-        # 执行搜索
-        result = search_baidu(keyword, page)
+        # 执行多引擎搜索
+        all_results = []
+        for engine in engines:
+            result = search_with_engine(engine, keyword)
+            if result['status'] == 'success':
+                all_results.extend(result['data']['results'])
+            sleep(2)  # 避免请求过快
         
-        # 返回结果，添加缓存控制
+        # 返回结果
+        response_data = {
+            'status': 'success',
+            'data': {
+                'keyword': keyword,
+                'engines': engines,
+                'results': all_results,
+                'total_found': len(all_results)
+            }
+        }
+        
         return {
-            'statusCode': 200 if result['status'] == 'success' else 500,
+            'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
                 'Cache-Control': 'public, max-age=60',  # 缓存1分钟
                 'Vary': 'Accept-Encoding'
             },
-            'body': json.dumps(result, ensure_ascii=False)
+            'body': json.dumps(response_data, ensure_ascii=False)
         }
         
     except Exception as e:
@@ -187,8 +154,7 @@ if __name__ == "__main__":
     test_event = {
         'queryStringParameters': {
             'q': 'python',
-            'engine': 'baidu',
-            'page': '1'
+            'engines': 'bing,yahoo'
         }
     }
     response = handler(test_event, None)
