@@ -2,15 +2,21 @@
   "name": "search-api",
   "version": "1.0.0",
   "description": "Multi-engine Search API with Netlify Functions",
+  "type": "module",
   "scripts": {
-    "dev": "netlify dev"
+    "dev": "netlify dev",
+    "clean": "rimraf node_modules"
   },
   "dependencies": {
     "@netlify/functions": "^2.0.0",
-    "node-fetch": "^2.6.1",
-    "cheerio": "^1.0.0-rc.12"
+    "node-fetch": "^3.3.2",
+    "cheerio": "1.0.0-rc.12"
   },
   "devDependencies": {
-    "netlify-cli": "^17.0.0"
+    "netlify-cli": "^17.0.0",
+    "rimraf": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
