@@ -1,10 +1,12 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
+  command = "npm install"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = ["cheerio"]
 
 [functions.search]
   handler = "search.handler"
@@ -16,5 +18,5 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
-    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/*;"
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://www.bing.com https://search.yahoo.com;"
     Cache-Control = "public, max-age=60"

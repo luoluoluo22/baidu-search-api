@@ -1,14 +1,14 @@
 {
-  "name": "baidu-search-api",
+  "name": "search-api",
   "version": "1.0.0",
-  "description": "Baidu Search API with Netlify Functions",
+  "description": "Multi-engine Search API with Netlify Functions",
   "scripts": {
-    "build": "pip install -r requirements.txt && cd netlify/functions && pip install -r requirements.txt",
     "dev": "netlify dev"
   },
   "dependencies": {
     "@netlify/functions": "^2.0.0",
-    "node-fetch": "^2.6.1"
+    "node-fetch": "^2.6.1",
+    "cheerio": "^1.0.0-rc.12"
   },
   "devDependencies": {
     "netlify-cli": "^17.0.0"
