@@ -718,7 +718,7 @@
     cpy "^9.0.0"
     path-exists "^5.0.0"
 
-"@netlify/functions@^2.0.0":
+"@netlify/functions@^2.6.0":
   version "2.8.2"
   resolved "https://registry.npmmirror.com/@netlify/functions/-/functions-2.8.2.tgz#653395b901a74a6189e913a089f9cb90083ca6ce"
   integrity sha512-DeoAQh8LuNPvBE4qsKlezjKj0PyXDryOFJfJKo3Z1qZLKzQ21sT314KQKPVjfvw6knqijj+IO+0kHXy/TJiqNA==
@@ -5124,7 +5124,7 @@ nested-error-stacks@^2.0.0, nested-error-stacks@^2.1.0, nested-error-stacks@^2.1
   resolved "https://registry.npmmirror.com/nested-error-stacks/-/nested-error-stacks-2.1.1.tgz#26c8a3cee6cc05fbcf1e333cd2fc3e003326c0b5"
   integrity sha512-9iN1ka/9zmX1ZvLV9ewJYEk9h7RyRRtqdK0woXcqohu8EWIerfPUjYJPg0ULy0UqP7cslmdGc8xKDJcojlKiaw==
 
-netlify-cli@^17.0.0:
+netlify-cli@^17.15.1:
   version "17.38.1"
   resolved "https://registry.npmmirror.com/netlify-cli/-/netlify-cli-17.38.1.tgz#05dd9aa64b3491e0e40043360e0881f3a3382cc0"
   integrity sha512-9R7KYIJac0FPbgCgIG3UuBZB2QMmSBBMygAUfRzTjT6PLOYS6xVLAlmO4/upVdSu//gREimPLlKaYVNiH2lUqQ==
