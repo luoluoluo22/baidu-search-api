@@ -4,17 +4,12 @@
   "description": "Multi-engine Search API with Netlify Functions",
   "type": "module",
   "scripts": {
-    "dev": "netlify dev",
-    "clean": "rimraf node_modules"
+    "dev": "netlify dev"
   },
   "dependencies": {
     "@netlify/functions": "^2.6.0",
     "node-fetch": "^3.3.2",
     "cheerio": "1.0.0-rc.12"
-  },
-  "devDependencies": {
-    "netlify-cli": "^17.15.1",
-    "rimraf": "^5.0.5"
   },
   "engines": {
     "node": ">=18.0.0"
