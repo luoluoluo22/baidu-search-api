@@ -2,17 +2,13 @@
   publish = "public"
   functions = "netlify/functions"
 
-[build.environment]
-  PYTHON_VERSION = "3.9"
-
 [functions]
   directory = "netlify/functions"
-  included_files = ["*.py", "requirements.txt"]
   node_bundler = "esbuild"
 
 [functions.search]
   handler = "search.handler"
-  timeout = "10"  # 增加超时时间到10秒，因为需要请求多个搜索引擎
+  timeout = "10"  # 搜索超时时间为10秒
 
 [[headers]]
   for = "/*"

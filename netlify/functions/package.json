@@ -1,8 +1,12 @@
 {
-  "name": "baidu-search-function",
+  "name": "search-function",
   "version": "1.0.0",
-  "description": "Baidu search Netlify function",
+  "description": "Multi-engine search Netlify function",
   "main": "search.js",
+  "dependencies": {
+    "node-fetch": "^2.6.1",
+    "cheerio": "^1.0.0-rc.12"
+  },
   "engines": {
     "node": ">=18.0.0"
   }
