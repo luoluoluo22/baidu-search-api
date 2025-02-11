@@ -251,7 +251,7 @@ export const handler = async function (event, context) {
   try {
     const query = event.queryStringParameters?.q
     const selectedEngines = (
-      event.queryStringParameters?.engines || 'bing,yahoo'
+      event.queryStringParameters?.engines || 'bing,yahoo,zhihu'
     )
       .toLowerCase()
       .split(',')
@@ -274,7 +274,7 @@ export const handler = async function (event, context) {
         headers,
         body: JSON.stringify({
           status: 'error',
-          message: '请选择有效的搜索引擎 (bing 或 yahoo)',
+          message: '请选择有效的搜索引擎 (bing 、 yahoo 、 zhihu)',
         }),
       }
     }
