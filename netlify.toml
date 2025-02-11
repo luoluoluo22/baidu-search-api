@@ -10,7 +10,7 @@
 
 [functions.search]
   handler = "search.handler"
-  timeout = "10"  # 搜索超时时间为10秒
+  timeout = "10"  # 恢复默认超时时间
 
 [[headers]]
   for = "/*"
@@ -18,5 +18,5 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
-    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://www.bing.com https://search.yahoo.com;"
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://www.bing.com https://search.yahoo.com https://www.zhihu.com;"
     Cache-Control = "public, max-age=60"

@@ -1,65 +1,88 @@
-import fetch from 'node-fetch';
-import cheerio from 'cheerio';
+import fetch from 'node-fetch'
+import cheerio from 'cheerio'
+import chromium from 'chrome-aws-lambda'
+import puppeteer from 'puppeteer-core'
+import crypto from 'crypto'
 
 // 随机User-Agent
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0'
-];
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+]
 
 // 获取随机User-Agent
 const getRandomUserAgent = () => {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-};
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+}
+
+// 清理HTML标签的辅助函数
+function cleanHtml(text) {
+  if (!text) return '';
+  // 移除所有HTML标签
+  let clean = text.replace(/<[^>]+>/g, '');
+  // 移除多余的空白字符
+  clean = clean.replace(/\s+/g, ' ');
+  // 移除特殊字符
+  clean = clean.replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+  return clean.trim();
+}
 
 // 搜索引擎配置
 const SEARCH_ENGINES = {
   bing: {
-    url: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-CN`,
+    url: (query) =>
+      `https://www.bing.com/search?q=${encodeURIComponent(
+        query
+      )}&setlang=zh-CN`,
     resultSelector: '#b_results .b_algo',
     transform: ($, element) => {
-      const $element = $(element);
-      const $title = $element.find('h2 a');
-      const $desc = $element.find('.b_caption p');
-      
+      const $element = $(element)
+      const $title = $element.find('h2 a')
+      const $desc = $element.find('.b_caption p')
+
       return {
         title: $title.text().trim(),
         link: $title.attr('href'),
         description: $desc.text().trim(),
-        source: 'bing'
-      };
+        source: 'bing',
+      }
     },
     headers: {
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      Accept:
+        'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
       'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+      Pragma: 'no-cache',
+      'Sec-Ch-Ua':
+        '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
       'Sec-Ch-Ua-Mobile': '?0',
       'Sec-Ch-Ua-Platform': '"Windows"',
       'Sec-Fetch-Dest': 'document',
       'Sec-Fetch-Mode': 'navigate',
       'Sec-Fetch-Site': 'none',
       'Sec-Fetch-User': '?1',
-      'Upgrade-Insecure-Requests': '1'
-    }
+      'Upgrade-Insecure-Requests': '1',
+    },
   },
   yahoo: {
     url: (query) => `https://search.yahoo.com/search?p=${encodeURIComponent(query)}&ei=UTF-8&fr=yfp-t&fp=1`,
     resultSelector: '#main .algo',
     transform: ($, element) => {
-      const $element = $(element);
-      const $title = $element.find('h3.title a');
-      const $desc = $element.find('.compText p');
-      
+      const $element = $(element)
+      const $title = $element.find('h3.title a')
+      const $desc = $element.find('.compText p')
+
       return {
         title: $title.text().trim(),
         link: $title.attr('href'),
         description: $desc.text().trim(),
         source: 'yahoo'
-      };
+      }
     },
     headers: {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -67,53 +90,144 @@ const SEARCH_ENGINES = {
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache'
     }
-  }
-};
+  },
+  zhihu: {
+    url: (query) => `https://www.zhihu.com/api/v4/search_v3?gk_version=gz-gaokao&t=general&q=${encodeURIComponent(query)}&correction=1&offset=0&limit=20&filter_fields=&lc_idx=0&show_all_topics=0&search_source=Normal`,
+    isApi: true,
+    resultSelector: 'data',
+    transform: (data) => {
+      if (!data || !Array.isArray(data)) {
+        console.error('Invalid Zhihu API response:', data);
+        return [];
+      }
+
+      return data
+        .filter(item => item.type === 'search_result' && item.object)
+        .map(item => {
+          const obj = item.object;
+          let title = '';
+          let link = '';
+          let description = '';
+          let meta = {};
+
+          // 处理不同类型的内容
+          if (obj.type === 'answer' || obj.type === 'article') {
+            title = cleanHtml(obj.question?.name || obj.title || '');
+            link = obj.url?.replace('api.zhihu.com/articles', 'zhuanlan.zhihu.com/p')
+                          .replace('api.zhihu.com/answers', 'www.zhihu.com/answer');
+            description = cleanHtml(obj.excerpt || obj.content || '');
+            meta = {
+              type: obj.type,
+              voteup_count: obj.voteup_count,
+              comment_count: obj.comment_count,
+              author: obj.author?.name
+            };
+          } else if (obj.type === 'question') {
+            title = cleanHtml(obj.title);
+            link = `https://www.zhihu.com/question/${obj.id}`;
+            description = cleanHtml(obj.excerpt || '');
+            meta = {
+              type: 'question',
+              answer_count: obj.answer_count,
+              follower_count: obj.follower_count
+            };
+          }
+
+          return {
+            title: title || '无标题',
+            link: link || '#',
+            description: description.substring(0, 200) + (description.length > 200 ? '...' : ''),
+            source: 'zhihu',
+            meta
+          };
+        })
+        .filter(item => item.title && item.link !== '#');
+    },
+    headers: {
+      "accept": "application/json, text/plain, */*",
+      "accept-encoding": "gzip, deflate, br",
+      "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "content-type": "application/json",
+      "cookie": process.env.ZHIHU_COOKIE,
+      "origin": "https://www.zhihu.com",
+      "referer": (query) => `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(query)}`,
+      "sec-ch-ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "same-origin",
+      "x-requested-with": "fetch",
+      "x-zse-93": "101_3_3.0",
+      "x-zse-96": "2.0_" + crypto.createHash('md5').update(Date.now().toString()).digest('hex')
+    }
+  },
+}
 
 // 搜索单个引擎
 async function searchEngine(engine, query) {
   try {
     const headers = {
+      ...engine.headers,
       'User-Agent': getRandomUserAgent(),
-      ...engine.headers
-    };
+    }
 
-    const response = await fetch(engine.url(query), { headers });
+    // 处理动态referer
+    if (typeof headers.referer === 'function') {
+      headers.referer = headers.referer(query)
+    }
+
+    console.log('Request URL:', engine.url(query));
+    console.log('Request Headers:', headers);
+
+    const response = await fetch(engine.url(query), { headers })
 
     if (!response.ok) {
-      console.error(`Search engine error (${engine}): HTTP ${response.status}`);
-      return [];
+      console.error(`Search engine error: HTTP ${response.status}`)
+      console.error('Response Headers:', response.headers);
+      const text = await response.text();
+      console.error('Response Body:', text);
+      return []
     }
 
-    const html = await response.text();
-    
+    // 处理API响应
+    if (engine.isApi) {
+      const json = await response.json()
+      return engine.transform(json[engine.resultSelector] || [])
+    }
+
+    // 处理HTML响应
+    const html = await response.text()
+
     // 检查是否被重定向到验证页面
-    if (html.includes('detected unusual traffic') || html.includes('verify you are a human')) {
-      console.error(`Search engine (${engine}) requested verification`);
-      return [];
+    if (
+      html.includes('detected unusual traffic') ||
+      html.includes('verify you are a human')
+    ) {
+      console.error(`Search engine requested verification`)
+      return []
     }
 
-    const $ = cheerio.load(html);
-    const results = [];
+    const $ = cheerio.load(html)
+    const results = []
 
     $(engine.resultSelector).each((i, element) => {
-      if (i < 20) { // 限制结果数量
-        const result = engine.transform($, element);
+      if (i < 20) {
+        const result = engine.transform($, element)
         if (result.title && result.link) {
-          results.push(result);
+          results.push(result)
         }
       }
-    });
+    })
 
-    // 如果没有找到结果，记录HTML以便调试
     if (results.length === 0) {
-      console.error(`No results found for ${engine}. HTML length: ${html.length}`);
+      console.error(`No results found. HTML length: ${html.length}`)
     }
 
-    return results;
+    return results
   } catch (error) {
-    console.error(`Search engine error (${engine}):`, error);
-    return [];
+    console.error(`Search engine error:`, error)
+    return []
   }
 }
 
@@ -122,23 +236,25 @@ export const handler = async function (event, context) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Content-Type': 'application/json; charset=utf-8'
-  };
+    'Content-Type': 'application/json; charset=utf-8',
+  }
 
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
       headers,
-      body: ''
-    };
+      body: '',
+    }
   }
 
   try {
-    const query = event.queryStringParameters?.q;
-    const selectedEngines = (event.queryStringParameters?.engines || 'bing,yahoo')
+    const query = event.queryStringParameters?.q
+    const selectedEngines = (
+      event.queryStringParameters?.engines || 'bing,yahoo'
+    )
       .toLowerCase()
       .split(',')
-      .filter(e => SEARCH_ENGINES[e]);
+      .filter((e) => SEARCH_ENGINES[e])
 
     if (!query) {
       return {
@@ -146,9 +262,9 @@ export const handler = async function (event, context) {
         headers,
         body: JSON.stringify({
           status: 'error',
-          message: '请提供搜索关键词 (使用q参数)'
-        })
-      };
+          message: '请提供搜索关键词 (使用q参数)',
+        }),
+      }
     }
 
     if (selectedEngines.length === 0) {
@@ -157,18 +273,18 @@ export const handler = async function (event, context) {
         headers,
         body: JSON.stringify({
           status: 'error',
-          message: '请选择有效的搜索引擎 (bing 或 yahoo)'
-        })
-      };
+          message: '请选择有效的搜索引擎 (bing 或 yahoo)',
+        }),
+      }
     }
 
     // 并行执行所有搜索
-    const searchPromises = selectedEngines.map(engineName => 
+    const searchPromises = selectedEngines.map((engineName) =>
       searchEngine(SEARCH_ENGINES[engineName], query)
-    );
+    )
 
-    const results = await Promise.all(searchPromises);
-    const allResults = results.flat();
+    const results = await Promise.all(searchPromises)
+    const allResults = results.flat()
 
     // 如果所有引擎都没有结果，返回错误
     if (allResults.length === 0) {
@@ -177,9 +293,9 @@ export const handler = async function (event, context) {
         headers,
         body: JSON.stringify({
           status: 'error',
-          message: '未找到搜索结果，可能是搜索引擎限制访问，请稍后再试'
-        })
-      };
+          message: '未找到搜索结果，可能是搜索引擎限制访问，请稍后再试',
+        }),
+      }
     }
 
     return {
@@ -191,20 +307,19 @@ export const handler = async function (event, context) {
           keyword: query,
           engines: selectedEngines,
           results: allResults,
-          total_found: allResults.length
-        }
-      })
-    };
-
+          total_found: allResults.length,
+        },
+      }),
+    }
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('Search error:', error)
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         status: 'error',
-        message: '搜索服务出错'
-      })
-    };
+        message: '搜索服务出错',
+      }),
+    }
   }
-}; 
+}

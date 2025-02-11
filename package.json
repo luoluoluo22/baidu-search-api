@@ -8,8 +8,8 @@
   },
   "dependencies": {
     "@netlify/functions": "^2.6.0",
-    "node-fetch": "^3.3.2",
-    "cheerio": "1.0.0-rc.12"
+    "cheerio": "1.0.0-rc.12",
+    "node-fetch": "^3.3.2"
   },
   "engines": {
     "node": ">=18.0.0"
