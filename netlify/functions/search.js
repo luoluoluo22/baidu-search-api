@@ -148,18 +148,19 @@ const SEARCH_ENGINES = {
       "accept-encoding": "gzip, deflate, br",
       "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
       "content-type": "application/json",
-      "cookie": process.env.ZHIHU_COOKIE,
+      "cookie": process.env.ZHIHU_COOKIE||'',
       "origin": "https://www.zhihu.com",
       "referer": (query) => `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(query)}`,
-      "sec-ch-ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+      "sec-ch-ua": '"Not A(Brand";v="8", "Chromium";v="132", "Microsoft Edge";v="132"',
       "sec-ch-ua-mobile": "?0",
       "sec-ch-ua-platform": '"Windows"',
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
       "sec-fetch-site": "same-origin",
-      "x-requested-with": "fetch",
-      "x-zse-93": "101_3_3.0",
-      "x-zse-96": "2.0_" + crypto.createHash('md5').update(Date.now().toString()).digest('hex')
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "x-zse-93":"101_3_3.0",
+      "x-zse-96":"2.0_OcF2c4f+cD+zA9HWxvf=pDSb5AqR4KMeoLnxTYclT/0cI9TpZx/wi/g3KoidyTkk",
+      "x-zst-81":"3_2.0VhnTj77m-qofgh3TxTnq2_Qq2LYuDhV80wSL7iUZQ6nxET20m4fBJCHMiqHPD4S1hCS974e1DrNPAQLYlUefii7q26fp2L2ZKgSfnveCgrNOQwXTt_Fq6DQye8t9DGwT9RFZQAuTLbHP2GomybO1VhRTQ6kp-XxmxgNK-GNTjTkxkhkKh0PhHix_F0PM69H82UFqhDwCe7xMCwo82wgMgbOftBFKST3_WgNBc9OffheBeAOLlGcBFH_z6RC_JUpGsDXqnvu1ABHKfCtLXDCmciC06MSX6QxmcB3LXG7B89FB_qVfgBVLVc3mjDSBQcPK7rxy6hXmPUFX2cfZqgcMoHXOxvwfHCF9Uw2YCUSLurOs"
     }
   },
 }
