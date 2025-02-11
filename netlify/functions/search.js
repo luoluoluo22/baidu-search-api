@@ -291,7 +291,7 @@ export const handler = async function (event, context) {
         headers,
         body: JSON.stringify({
           status: 'error',
-          message: '未找到搜索结果，可能是搜索引擎限制访问，请稍后再试',
+          message: '未找到搜索结果，可能是搜索引擎限制访问，请稍后再试'+process.env.ZHIHU_COOKIE,
         }),
       }
     }
