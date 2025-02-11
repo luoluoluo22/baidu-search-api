@@ -1,8 +1,5 @@
 import fetch from 'node-fetch'
 import cheerio from 'cheerio'
-import chromium from 'chrome-aws-lambda'
-import puppeteer from 'puppeteer-core'
-import crypto from 'crypto'
 
 // 随机User-Agent
 const USER_AGENTS = [
