@@ -263,9 +263,21 @@ async function searchEngine(engine, query) {
           timeout: 30000
         });
 
-        // 等待页面加载完成后执行一些操作
+        // 等待页面加载完成后执行搜索操作
         await page.waitForSelector('.Search-container', { timeout: 10000 });
-        console.log('页面加载完成，开始搜索');
+        console.log('页面加载完成');
+
+        // 模拟搜索行为
+        console.log('模拟搜索行为...');
+        const searchInput = await page.$('.SearchBar-input input');
+        await searchInput.click();
+        await searchInput.type(query);
+        await page.keyboard.press('Enter');
+        console.log('搜索触发完成');
+
+        // 等待搜索结果加载
+        await page.waitForSelector('.SearchResult-Card', { timeout: 10000 });
+        console.log('搜索结果已加载');
 
         // 等待API响应
         try {
