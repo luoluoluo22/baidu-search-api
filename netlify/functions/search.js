@@ -229,19 +229,25 @@ async function searchEngine(engine, query) {
         const responsePromise = new Promise((resolve, reject) => {
           page.on('response', async response => {
             const url = response.url();
-            console.log('捕获到响应:', url);
             if (url.includes('api/v4/search_v3?') && url.includes('search_source=Normal')) {
               try {
-                const data = await response.json();
-                console.log('API响应数据:', JSON.stringify(data, null, 2));
-                if (data && data.data) {
-                  apiData = data;
-                  resolve(data);
-                } else {
-                  console.log('API响应数据格式不正确');
+                const responseText = await response.text();
+                console.log('API原始响应:', responseText);
+                
+                try {
+                  const data = JSON.parse(responseText);
+                  console.log('API响应数据:', JSON.stringify(data, null, 2));
+                  if (data && data.data) {
+                    apiData = data;
+                    resolve(data);
+                  } else {
+                    console.log('API响应数据格式不正确');
+                  }
+                } catch (parseError) {
+                  console.error('JSON解析错误:', parseError);
                 }
               } catch (e) {
-                console.error('解析API响应出错:', e);
+                console.error('获取响应内容出错:', e);
               }
             }
           });
