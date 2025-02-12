@@ -1,16 +1,16 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
-  command = "npm install"
+  command = "pip install -r netlify/functions/requirements.txt"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["cheerio"]
 
-[functions.search]
-  handler = "search.handler"
-  timeout = "10"  # 恢复默认超时时间
+[functions.zhihu_search]
+  handler = "zhihu_search.handler"
+  runtime = "python3.13"
+  timeout = "30"
 
 [[headers]]
   for = "/*"
@@ -20,3 +20,11 @@
     Access-Control-Allow-Headers = "Content-Type"
     Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://www.bing.com https://search.yahoo.com https://www.zhihu.com;"
     Cache-Control = "public, max-age=60"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[build.environment]
+  PYTHON_VERSION = "3.13"

@@ -95,67 +95,8 @@ const SEARCH_ENGINES = {
     resultSelector: 'data',
     usePuppeteer: true,
     transform: (data) => {
-      if (!data || !Array.isArray(data)) {
-        console.error('Invalid Zhihu API response:', data);
-        return [];
-      }
-
-      return data
-        .filter(item => item.type === 'search_result' && item.object)
-        .map(item => {
-          const obj = item.object;
-          let title = '';
-          let link = '';
-          let description = '';
-          let meta = {};
-
-          // 处理不同类型的内容
-          if (obj.type === 'answer') {
-            title = cleanHtml(obj.question?.name || '');
-            link = `https://www.zhihu.com/answer/${obj.id}`;
-            description = cleanHtml(obj.excerpt || obj.content || '');
-            meta = {
-              type: 'answer',
-              voteup_count: obj.voteup_count,
-              comment_count: obj.comment_count,
-              author: obj.author?.name,
-              created_time: obj.created_time,
-              updated_time: obj.updated_time
-            };
-          } else if (obj.type === 'article') {
-            title = cleanHtml(obj.title || '');
-            link = `https://zhuanlan.zhihu.com/p/${obj.id}`;
-            description = cleanHtml(obj.excerpt || obj.content || '');
-            meta = {
-              type: 'article',
-              voteup_count: obj.voteup_count,
-              comment_count: obj.comment_count,
-              author: obj.author?.name,
-              created_time: obj.created_time,
-              updated_time: obj.updated_time
-            };
-          } else if (obj.type === 'question') {
-            title = cleanHtml(obj.title);
-            link = `https://www.zhihu.com/question/${obj.id}`;
-            description = cleanHtml(obj.excerpt || '');
-            meta = {
-              type: 'question',
-              answer_count: obj.answer_count,
-              follower_count: obj.follower_count,
-              created_time: obj.created_time,
-              updated_time: obj.updated_time
-            };
-          }
-
-          return {
-            title: title || '无标题',
-            link: link || '#',
-            description: description.substring(0, 200) + (description.length > 200 ? '...' : ''),
-            source: 'zhihu',
-            meta
-          };
-        })
-        .filter(item => item.title && item.link !== '#');
+      // 直接返回原始数据，保持与Python版本一致
+      return data;
     }
   },
 }
@@ -163,16 +104,11 @@ const SEARCH_ENGINES = {
 // 搜索单个引擎
 async function searchEngine(engine, query) {
   try {
-    // 使用Puppeteer的情况
     if (engine.usePuppeteer) {
       let browser = null;
       try {
-        console.log('启动Chrome浏览器...');
-        console.log('Chrome路径:', process.env.CHROME_PATH);
-        
-        // 启动浏览器
         browser = await puppeteer.launch({
-          executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
+          executablePath: process.env.CHROME_PATH,
           headless: true,
           args: [
             '--no-sandbox',
@@ -185,16 +121,23 @@ async function searchEngine(engine, query) {
             '--disable-dev-shm-usage'
           ],
           ignoreHTTPSErrors: true,
-          userDataDir: '/tmp/puppeteer_user_data'
+          userDataDir: './user_data'
         });
 
-        console.log('浏览器启动成功');
         const page = await browser.newPage();
-        console.log('新页面创建成功');
-
+        
         // 设置浏览器特征
         await page.setUserAgent(getRandomUserAgent());
         await page.setViewport({ width: 1920, height: 1080 });
+
+        // 设置必要的请求头
+        await page.setExtraHTTPHeaders({
+          'x-api-version': '3.0.91',
+          'x-app-version': '8.6.0',
+          'x-zse-93': '101_3_3.0',
+          'x-zse-96': '2.0_',
+          'x-requested-with': 'fetch'
+        });
 
         // 注入反检测代码
         await page.evaluateOnNewDocument(`
@@ -204,98 +147,136 @@ async function searchEngine(engine, query) {
           Object.defineProperty(navigator, 'plugins', {
             get: () => [1, 2, 3, 4, 5]
           });
+          // 注入用户状态
+          window.g_user = {
+            is_login: true
+          };
         `);
 
         // 设置cookies
         if (process.env.ZHIHU_COOKIE) {
-          console.log('开始设置知乎Cookie...');
-          const cookies = process.env.ZHIHU_COOKIE.split('; ').map(cookie => {
-            const [name, value] = cookie.split('=');
+          // 检查是否包含关键cookie
+          if (!process.env.ZHIHU_COOKIE.includes('z_c0=')) {
+            throw new Error('缺少知乎认证cookie');
+          }
+          
+          // 修改cookie解析逻辑
+          const cookiePairs = process.env.ZHIHU_COOKIE.split(/;\s*(?=[^;]*=)/);
+          const cookies = cookiePairs.map(pair => {
+            const firstEqualIndex = pair.indexOf('=');
+            const name = pair.slice(0, firstEqualIndex);
+            const value = pair.slice(firstEqualIndex + 1);
+            
+            // 跳过无效的cookie
+            if (!name || !value) {
+              return null;
+            }
+
             return {
               name,
               value,
               domain: '.zhihu.com',
-              path: '/'
+              path: '/',
+              secure: true,
+              httpOnly: name === '_zap' || name === 'd_c0' || name === 'z_c0',
+              expires: Date.now() + 86400000 * 30
             };
-          });
+          }).filter(cookie => cookie !== null);
+          
+          // 先清除所有已存在的cookies
+          const client = await page.target().createCDPSession();
+          await client.send('Network.clearBrowserCookies');
+          
+          // 设置新的cookies
           await page.setCookie(...cookies);
-          console.log('Cookie设置完成');
+          
+          // 验证关键cookie是否存在
+          const currentCookies = await page.cookies('https://www.zhihu.com');
+          const hasZC0 = currentCookies.some(cookie => cookie.name === 'z_c0');
+          if (!hasZC0) {
+            throw new Error('知乎认证cookie设置失败');
+          }
         } else {
-          console.log('警告: 未找到知乎Cookie配置');
+          throw new Error('未找到知乎Cookie配置');
         }
 
         // 存储API响应数据
         let apiData = null;
-        const responsePromise = new Promise((resolve, reject) => {
-          page.on('response', async response => {
-            const url = response.url();
-            if (url.includes('api/v4/search_v3?') && url.includes('search_source=Normal')) {
-              try {
-                const responseText = await response.text();
-                console.log('API原始响应:', responseText);
-                
-                try {
-                  const data = JSON.parse(responseText);
-                  console.log('API响应数据:', JSON.stringify(data, null, 2));
-                  if (data && data.data) {
-                    apiData = data;
-                    resolve(data);
-                  } else {
-                    console.log('API响应数据格式不正确');
-                  }
-                } catch (parseError) {
-                  console.error('JSON解析错误:', parseError);
+        let apiResponseReceived = false;
+        
+        // 监听API响应
+        page.on('response', async response => {
+          const url = response.url();
+          if (url.includes('api/v4/search_v3?')) {
+            console.log('捕获到知乎API响应:', url);
+            try {
+              const data = await response.json();
+              console.log('API响应数据:', JSON.stringify(data, null, 2));
+              if (data && !data.error) {
+                apiData = data;
+                apiResponseReceived = true;
+              } else {
+                console.error('API返回错误:', data.error);
+                // 尝试直接从页面提取数据
+                const pageData = await page.evaluate(() => {
+                  const items = Array.from(document.querySelectorAll('.SearchResult-Card'));
+                  return items.map(item => {
+                    return {
+                      title: item.querySelector('.ContentItem-title')?.textContent?.trim() || '',
+                      content: item.querySelector('.RichContent-inner')?.textContent?.trim() || '',
+                      author: item.querySelector('.AuthorInfo-name')?.textContent?.trim() || '',
+                      link: item.querySelector('a[data-za-detail-view-element_name="Title"]')?.href || ''
+                    };
+                  });
+                });
+                if (pageData && pageData.length > 0) {
+                  apiData = { data: pageData };
+                  apiResponseReceived = true;
                 }
-              } catch (e) {
-                console.error('获取响应内容出错:', e);
               }
+            } catch (e) {
+              console.error('获取响应内容出错:', e);
             }
-          });
-
-          // 设置超时
-          setTimeout(() => reject(new Error('API响应超时')), 30000);
+          }
         });
 
         // 访问搜索页面
-        console.log('正在访问页面:', engine.url(query));
-        await page.goto(engine.url(query), {
-          waitUntil: 'networkidle0',
-          timeout: 30000
-        });
-
-        // 等待页面加载完成后执行搜索操作
-        await page.waitForSelector('.Search-container', { timeout: 10000 });
-        console.log('页面加载完成');
-
-        // 模拟搜索行为
-        console.log('模拟搜索行为...');
-        const searchInput = await page.$('.SearchBar-input input');
-        await searchInput.click();
-        await searchInput.type(query);
-        await page.keyboard.press('Enter');
-        console.log('搜索触发完成');
-
-        // 等待搜索结果加载
-        await page.waitForSelector('.SearchResult-Card', { timeout: 10000 });
-        console.log('搜索结果已加载');
-
-        // 等待API响应
+        console.log('开始访问知乎搜索页面...');
         try {
-          console.log('等待API响应...');
-          const data = await responsePromise;
-          console.log('成功获取API响应');
-          return engine.transform(data.data || []);
-        } catch (e) {
-          console.error('获取搜索结果失败:', e);
-          return [];
+          // 直接访问搜索页面
+          await page.goto(engine.url(query), {
+            waitUntil: 'networkidle0',
+            timeout: 30000
+          });
+          console.log('页面加载完成');
+        } catch (navigationError) {
+          console.error('页面导航错误:', navigationError);
+          throw navigationError;
         }
+
+        // 等待API响应或超时
+        console.log('等待API响应...');
+        let retryCount = 0;
+        const maxRetries = 3;
+        while (!apiResponseReceived && retryCount < maxRetries) {
+          console.log(`第${retryCount + 1}次等待...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          retryCount++;
+        }
+
+        if (apiResponseReceived && apiData) {
+          console.log('成功获取API数据');
+          return engine.transform(apiData.data || []);
+        }
+
+        console.log('未能获取到任何搜索结果');
+        return [];
 
       } catch (error) {
         console.error('Puppeteer错误:', error);
         return [];
       } finally {
         if (browser) {
-          console.log('关闭浏览器');
           await browser.close();
         }
       }

@@ -17,3 +17,25 @@ dist/
 Thumbs.db
 
 zhihu_request.py
+
+# Dependencies
+.pnp
+.pnp.js
+
+# Testing
+coverage
+
+# Production
+build
+
+# Misc
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+user_data/
