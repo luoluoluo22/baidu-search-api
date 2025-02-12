@@ -6,13 +6,14 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = []
 
-[[redirects]]
-  from = "/.netlify/functions/zhihu_search"
-  to = "/.netlify/functions/zhihu_search"
-  status = 200
-  force = true
+[functions.zhihu_search]
+  handler = "index.handler"
+  runtime = "python3.9"
+  included_files = ["netlify/functions/requirements.txt"]
+
+[functions.zhihu_search.environment]
+  DEBUG = "true"
 
 [[redirects]]
   from = "/api/*"
@@ -28,9 +29,6 @@
     Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://www.bing.com https://search.yahoo.com https://www.zhihu.com;"
     Cache-Control = "public, max-age=60"
 
-[functions.zhihu_search]
-  included_files = ["netlify/functions/requirements.txt"]
-  external_node_modules = []
-
 [build.environment]
   PYTHON_VERSION = "3.9"
+  DEBUG = "true"
