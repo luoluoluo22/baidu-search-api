@@ -1,5 +1,6 @@
 import fetch from 'node-fetch'
 import cheerio from 'cheerio'
+import puppeteer from 'puppeteer-core'
 
 // 随机User-Agent
 const USER_AGENTS = [
@@ -89,9 +90,10 @@ const SEARCH_ENGINES = {
     }
   },
   zhihu: {
-    url: (query) => `https://www.zhihu.com/api/v4/search_v3?gk_version=gz-gaokao&t=general&q=${encodeURIComponent(query)}&correction=1&offset=0&limit=20&filter_fields=&lc_idx=0&show_all_topics=0&search_source=Normal`,
+    url: (query) => `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(query)}`,
     isApi: true,
     resultSelector: 'data',
+    usePuppeteer: true,
     transform: (data) => {
       if (!data || !Array.isArray(data)) {
         console.error('Invalid Zhihu API response:', data);
@@ -108,16 +110,29 @@ const SEARCH_ENGINES = {
           let meta = {};
 
           // 处理不同类型的内容
-          if (obj.type === 'answer' || obj.type === 'article') {
-            title = cleanHtml(obj.question?.name || obj.title || '');
-            link = obj.url?.replace('api.zhihu.com/articles', 'zhuanlan.zhihu.com/p')
-                          .replace('api.zhihu.com/answers', 'www.zhihu.com/answer');
+          if (obj.type === 'answer') {
+            title = cleanHtml(obj.question?.name || '');
+            link = `https://www.zhihu.com/answer/${obj.id}`;
             description = cleanHtml(obj.excerpt || obj.content || '');
             meta = {
-              type: obj.type,
+              type: 'answer',
               voteup_count: obj.voteup_count,
               comment_count: obj.comment_count,
-              author: obj.author?.name
+              author: obj.author?.name,
+              created_time: obj.created_time,
+              updated_time: obj.updated_time
+            };
+          } else if (obj.type === 'article') {
+            title = cleanHtml(obj.title || '');
+            link = `https://zhuanlan.zhihu.com/p/${obj.id}`;
+            description = cleanHtml(obj.excerpt || obj.content || '');
+            meta = {
+              type: 'article',
+              voteup_count: obj.voteup_count,
+              comment_count: obj.comment_count,
+              author: obj.author?.name,
+              created_time: obj.created_time,
+              updated_time: obj.updated_time
             };
           } else if (obj.type === 'question') {
             title = cleanHtml(obj.title);
@@ -126,7 +141,9 @@ const SEARCH_ENGINES = {
             meta = {
               type: 'question',
               answer_count: obj.answer_count,
-              follower_count: obj.follower_count
+              follower_count: obj.follower_count,
+              created_time: obj.created_time,
+              updated_time: obj.updated_time
             };
           }
 
@@ -141,23 +158,24 @@ const SEARCH_ENGINES = {
         .filter(item => item.title && item.link !== '#');
     },
     headers: {
-      "accept": "application/json, text/plain, */*",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
       "accept-encoding": "gzip, deflate, br",
       "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "cache-control": "no-cache",
       "content-type": "application/json",
-      "cookie": process.env.ZHIHU_COOKIE||'',
+      "cookie": process.env.ZHIHU_COOKIE || '',
       "origin": "https://www.zhihu.com",
+      "pragma": "no-cache",
       "referer": (query) => `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(query)}`,
-      "sec-ch-ua": '"Not A(Brand";v="8", "Chromium";v="132", "Microsoft Edge";v="132"',
+      "sec-ch-ua": '"Not A(Brand";v="99", "Google Chrome";v="122", "Chromium";v="122"',
       "sec-ch-ua-mobile": "?0",
       "sec-ch-ua-platform": '"Windows"',
-      "sec-fetch-dest": "document",
-      "sec-fetch-mode": "navigate",
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
       "sec-fetch-site": "same-origin",
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-      "x-zse-93":"101_3_3.0",
-      "x-zse-96":"2.0_OcF2c4f+cD+zA9HWxvf=pDSb5AqR4KMeoLnxTYclT/0cI9TpZx/wi/g3KoidyTkk",
-      "x-zst-81":"3_2.0VhnTj77m-qofgh3TxTnq2_Qq2LYuDhV80wSL7iUZQ6nxET20m4fBJCHMiqHPD4S1hCS974e1DrNPAQLYlUefii7q26fp2L2ZKgSfnveCgrNOQwXTt_Fq6DQye8t9DGwT9RFZQAuTLbHP2GomybO1VhRTQ6kp-XxmxgNK-GNTjTkxkhkKh0PhHix_F0PM69H82UFqhDwCe7xMCwo82wgMgbOftBFKST3_WgNBc9OffheBeAOLlGcBFH_z6RC_JUpGsDXqnvu1ABHKfCtLXDCmciC06MSX6QxmcB3LXG7B89FB_qVfgBVLVc3mjDSBQcPK7rxy6hXmPUFX2cfZqgcMoHXOxvwfHCF9Uw2YCUSLurOs"
+      "x-requested-with": "fetch",
+      "x-zse-93": "101_3_3.0",
+      "x-zse-96": "2.0_" + process.env.ZHIHU_X_96 || ''
     }
   },
 }
@@ -165,43 +183,126 @@ const SEARCH_ENGINES = {
 // 搜索单个引擎
 async function searchEngine(engine, query) {
   try {
+    // 使用Puppeteer的情况
+    if (engine.usePuppeteer) {
+      let browser = null;
+      try {
+        // 启动浏览器
+        browser = await puppeteer.launch({
+          executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-infobars',
+            '--window-size=1920,1080',
+            '--start-maximized',
+            '--disable-gpu',
+            '--disable-dev-shm-usage'
+          ],
+          ignoreHTTPSErrors: true,
+          userDataDir: '/tmp/puppeteer_user_data'
+        });
+
+        const page = await browser.newPage();
+
+        // 设置浏览器特征
+        await page.setUserAgent(getRandomUserAgent());
+        await page.setViewport({ width: 1920, height: 1080 });
+
+        // 注入反检测代码
+        await page.evaluateOnNewDocument(`
+          Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+          });
+          Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5]
+          });
+        `);
+
+        // 设置cookies
+        if (process.env.ZHIHU_COOKIE) {
+          const cookies = process.env.ZHIHU_COOKIE.split('; ').map(cookie => {
+            const [name, value] = cookie.split('=');
+            return {
+              name,
+              value,
+              domain: '.zhihu.com',
+              path: '/'
+            };
+          });
+          await page.setCookie(...cookies);
+        }
+
+        // 存储API响应数据
+        let apiData = null;
+        const responsePromise = new Promise((resolve, reject) => {
+          page.on('response', async response => {
+            if (response.url().includes('api/v4/search_v3?')) {
+              try {
+                const data = await response.json();
+                if (!data.error) {
+                  apiData = data;
+                  resolve(data);
+                }
+              } catch (e) {
+                console.error('解析API响应出错:', e);
+              }
+            }
+          });
+
+          // 设置超时
+          setTimeout(() => reject(new Error('API响应超时')), 10000);
+        });
+
+        // 访问搜索页面
+        await page.goto(engine.url(query), {
+          waitUntil: 'networkidle0',
+          timeout: 30000
+        });
+
+        // 等待API响应
+        try {
+          const data = await responsePromise;
+          return engine.transform(data.data || []);
+        } catch (e) {
+          console.error('获取搜索结果失败:', e);
+          return [];
+        }
+
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    }
+
+    // 原有的非Puppeteer处理逻辑
     const headers = {
       ...engine.headers,
       'User-Agent': getRandomUserAgent(),
     }
 
-    // 处理动态referer
     if (typeof headers.referer === 'function') {
       headers.referer = headers.referer(query)
     }
-
-    console.log('Request URL:', engine.url(query));
-    console.log('Request Headers:', headers);
 
     const response = await fetch(engine.url(query), { headers })
 
     if (!response.ok) {
       console.error(`Search engine error: HTTP ${response.status}`)
-      console.error('Response Headers:', response.headers);
-      const text = await response.text();
-      console.error('Response Body:', text);
       return []
     }
 
-    // 处理API响应
     if (engine.isApi) {
       const json = await response.json()
       return engine.transform(json[engine.resultSelector] || [])
     }
 
-    // 处理HTML响应
     const html = await response.text()
 
-    // 检查是否被重定向到验证页面
-    if (
-      html.includes('detected unusual traffic') ||
-      html.includes('verify you are a human')
-    ) {
+    if (html.includes('detected unusual traffic') || html.includes('verify you are a human')) {
       console.error(`Search engine requested verification`)
       return []
     }
@@ -217,10 +318,6 @@ async function searchEngine(engine, query) {
         }
       }
     })
-
-    if (results.length === 0) {
-      console.error(`No results found. HTML length: ${html.length}`)
-    }
 
     return results
   } catch (error) {
