@@ -1,7 +1,7 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
-  command = "pip install -r netlify/functions/requirements.txt"
+  command = "python -m pip install --upgrade pip && pip install -r netlify/functions/requirements.txt --no-deps"
 
 [functions]
   directory = "netlify/functions"
@@ -9,7 +9,7 @@
 
 [functions.zhihu_search]
   handler = "zhihu_search.handler"
-  runtime = "python3.13"
+  runtime = "python3.9"
   timeout = "30"
 
 [[headers]]
@@ -27,4 +27,4 @@
   status = 200
 
 [build.environment]
-  PYTHON_VERSION = "3.13"
+  PYTHON_VERSION = "3.9"

@@ -1,1 +1,2 @@
-pyppeteer==1.0.2 
+pyppeteer==1.0.2
+--only-binary :all: 
