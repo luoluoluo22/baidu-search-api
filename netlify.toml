@@ -1,16 +1,23 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
-  command = "python -m pip install --upgrade pip && pip install -r netlify/functions/requirements.txt --no-deps"
+  command = "python -m pip install --upgrade pip && pip install -r netlify/functions/requirements.txt"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = []
 
-[functions.zhihu_search]
-  handler = "zhihu_search.handler"
-  runtime = "python3.9"
-  timeout = "30"
+[[redirects]]
+  from = "/.netlify/functions/zhihu_search"
+  to = "/.netlify/functions/zhihu_search"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
 
 [[headers]]
   for = "/*"
@@ -21,10 +28,9 @@
     Content-Security-Policy = "default-src 'self' 'unsafe-inline'; connect-src 'self' https://*.netlify.app/.netlify/functions/* https://www.bing.com https://search.yahoo.com https://www.zhihu.com;"
     Cache-Control = "public, max-age=60"
 
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+[functions.zhihu_search]
+  included_files = ["netlify/functions/requirements.txt"]
+  external_node_modules = []
 
 [build.environment]
   PYTHON_VERSION = "3.9"
