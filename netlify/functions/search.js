@@ -167,6 +167,9 @@ async function searchEngine(engine, query) {
     if (engine.usePuppeteer) {
       let browser = null;
       try {
+        console.log('启动Chrome浏览器...');
+        console.log('Chrome路径:', process.env.CHROME_PATH);
+        
         // 启动浏览器
         browser = await puppeteer.launch({
           executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
@@ -185,7 +188,9 @@ async function searchEngine(engine, query) {
           userDataDir: '/tmp/puppeteer_user_data'
         });
 
+        console.log('浏览器启动成功');
         const page = await browser.newPage();
+        console.log('新页面创建成功');
 
         // 设置浏览器特征
         await page.setUserAgent(getRandomUserAgent());
@@ -203,6 +208,7 @@ async function searchEngine(engine, query) {
 
         // 设置cookies
         if (process.env.ZHIHU_COOKIE) {
+          console.log('开始设置知乎Cookie...');
           const cookies = process.env.ZHIHU_COOKIE.split('; ').map(cookie => {
             const [name, value] = cookie.split('=');
             return {
@@ -213,18 +219,26 @@ async function searchEngine(engine, query) {
             };
           });
           await page.setCookie(...cookies);
+          console.log('Cookie设置完成');
+        } else {
+          console.log('警告: 未找到知乎Cookie配置');
         }
 
         // 存储API响应数据
         let apiData = null;
         const responsePromise = new Promise((resolve, reject) => {
           page.on('response', async response => {
-            if (response.url().includes('api/v4/search_v3?')) {
+            const url = response.url();
+            console.log('捕获到响应:', url);
+            if (url.includes('api/v4/search_v3?') && url.includes('search_source=Normal')) {
               try {
                 const data = await response.json();
-                if (!data.error) {
+                console.log('API响应数据:', JSON.stringify(data, null, 2));
+                if (data && data.data) {
                   apiData = data;
                   resolve(data);
+                } else {
+                  console.log('API响应数据格式不正确');
                 }
               } catch (e) {
                 console.error('解析API响应出错:', e);
@@ -233,26 +247,37 @@ async function searchEngine(engine, query) {
           });
 
           // 设置超时
-          setTimeout(() => reject(new Error('API响应超时')), 10000);
+          setTimeout(() => reject(new Error('API响应超时')), 30000);
         });
 
         // 访问搜索页面
+        console.log('正在访问页面:', engine.url(query));
         await page.goto(engine.url(query), {
           waitUntil: 'networkidle0',
           timeout: 30000
         });
 
+        // 等待页面加载完成后执行一些操作
+        await page.waitForSelector('.Search-container', { timeout: 10000 });
+        console.log('页面加载完成，开始搜索');
+
         // 等待API响应
         try {
+          console.log('等待API响应...');
           const data = await responsePromise;
+          console.log('成功获取API响应');
           return engine.transform(data.data || []);
         } catch (e) {
           console.error('获取搜索结果失败:', e);
           return [];
         }
 
+      } catch (error) {
+        console.error('Puppeteer错误:', error);
+        return [];
       } finally {
         if (browser) {
+          console.log('关闭浏览器');
           await browser.close();
         }
       }
